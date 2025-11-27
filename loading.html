@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent; /* Fundo transparente essencial */
+            display: flex;
+            flex-direction: column; /* Organiza um embaixo do outro */
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none; /* Impede seleção de texto */
+        }
+
+        .splash-logo {
+            width: 500px; /* Tamanho da logo */
+            height: auto;
+            /* Sombra para destacar caso o wallpaper do usuário seja claro */
+            filter: drop-shadow(0 0 15px rgba(0,0,0,0.6)); 
+            animation: pulse 2s infinite ease-in-out;
+        }
+
+        .loading-text {
+            margin-top: 20px; /* Espaço entre logo e texto */
+            color: #a4d007; /* Verde Steam Verde */
+            font-weight: bold;
+            font-size: 14px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+            animation: fadeText 2s infinite ease-in-out;
+        }
+
+        /* Animação de "respiração" da logo */
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        /* Animação do texto piscando suave */
+        @keyframes fadeText {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+    </style>
+</head>
+<body>
+    <img src="splash.png" class="splash-logo" alt="Steam Verde">
+    
+    <div class="loading-text">Iniciando...</div>
+</body>
+</html>

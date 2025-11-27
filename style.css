@@ -1,0 +1,133 @@
+body {
+    background: transparent; /* Importante para o arredondamento */
+    color: #c7d5e0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* A barra de título personalizada */
+.title-bar {
+    height: 32px;
+    background: #171a21; /* Mais escuro que o corpo */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 10px;
+    -webkit-app-region: drag; /* MÁGICA: Permite arrastar a janela */
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+.app-title {
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    color: #8f98a0;
+    pointer-events: none; /* O clique passa através do texto */
+}
+
+.window-controls {
+    display: flex;
+    -webkit-app-region: no-drag; /* MÁGICA: Permite clicar nos botões */
+}
+
+.window-controls button {
+    background: transparent;
+    border: none;
+    color: #8f98a0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    outline: none;
+    transition: 0.2s;
+    padding: 0;
+}
+
+.window-controls button i {
+    font-size: 16px;
+}
+
+.window-controls button:hover {
+    color: white;
+    background: #323f55;
+}
+
+#btn-close:hover {
+    background: #c21a1a;
+}
+
+/* Corpo Principal */
+.login-wrapper {
+    background: #1b2838; /* Fundo Azul Steam */
+    flex: 1; /* Ocupa o resto da altura */
+    padding: 30px 40px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+    border: 1px solid #000; /* Borda fina preta para definição */
+    border-top: none;
+}
+
+.logo-area { text-align: center; margin-bottom: 25px; margin-top: 10px; }
+h1 { margin: 0; font-size: 26px; letter-spacing: 2px; }
+.verde { color: #a4d007; font-weight: bold; text-shadow: 0 0 10px rgba(164, 208, 7, 0.3); }
+p { font-size: 12px; opacity: 0.6; margin-top: 5px; }
+
+.input-group { margin-bottom: 15px; }
+label { display: block; font-size: 11px; text-transform: uppercase; margin-bottom: 5px; color: #66c0f4; font-weight: bold;}
+
+input {
+    width: 100%;
+    padding: 12px;
+    background: #323f55;
+    border: 1px solid #101214;
+    border-radius: 4px;
+    color: white;
+    box-sizing: border-box;
+    outline: none;
+    transition: 0.2s;
+}
+input:focus { border-color: #66c0f4; background: #3e4c63; }
+
+button#loginBtn {
+    width: 100%;
+    padding: 14px;
+    margin-top: 10px;
+    background: linear-gradient(to right, #47bfff 0%, #1a44c2 100%);
+    /* Opção Verde Steam Verde */
+    background: linear-gradient(90deg, #a4d007 0%, #688f04 100%);
+    color: #fff;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+button#loginBtn:hover { filter: brightness(1.15); transform: scale(1.02); }
+button#loginBtn:disabled { background: #333; cursor: not-allowed; transform: none; }
+
+.error-msg {
+    background: rgba(194, 26, 26, 0.2);
+    color: #ff4d4d;
+    padding: 10px;
+    margin-bottom: 15px;
+    border-radius: 4px;
+    font-size: 12px;
+    text-align: center;
+    border: 1px solid #ff4d4d;
+    display: none; /* Escondido por padrão */
+}
+
+.footer-links { margin-top: 25px; text-align: center; font-size: 12px; }
+.footer-links a { color: #8f98a0; text-decoration: none; transition: 0.2s; }
+.footer-links a:hover { color: #a4d007; }

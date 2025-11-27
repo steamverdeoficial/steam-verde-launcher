@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login Steam Verde</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+</head>
+<body>
+    <div class="title-bar">
+        <div class="app-title"><center>STEAM VERDE</center></div>
+        <div class="window-controls">
+            <button id="btn-minimize" title="Minimizar">
+                <i class="material-icons">remove</i>
+            </button>
+            <button id="btn-close" title="Fechar">
+                <i class="material-icons">close</i>
+            </button>
+        </div>
+    </div>
+
+    <div class="login-wrapper">
+        <div class="logo-area">
+            <h1>STEAM <span class="verde">VERDE</span></h1>
+            <p>Launcher Exclusivo para Assinantes</p>
+        </div>
+        
+        <form id="loginForm">
+            <div class="input-group">
+                <label>Usuário ou E-mail</label>
+                <input type="text" id="username" required placeholder="Digite seu login...">
+            </div>
+            
+            <div class="input-group">
+                <label>Senha</label>
+                <input type="password" id="password" required placeholder="Digite sua senha...">
+            </div>
+
+            <div id="error-msg" class="error-msg" style="display: none;"></div>
+
+            <button type="submit" id="loginBtn">ENTRAR NA CONTA</button>
+        </form>
+        
+        <div class="footer-links">
+            <a href="#" onclick="require('electron').shell.openExternal('https://steamverde.net/novo/minha-conta')">Criar conta ou Assinar VIP</a>
+        </div><br><center><img src="logo.png" /></center>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>

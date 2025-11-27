@@ -1,0 +1,49 @@
+{
+  "name": "steam-verde-launcher",
+  "version": "1.0.0",
+  "description": "Launcher Exclusivo Steam Verde",
+  "main": "main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/steamverdeoficial/steam-verde-launcher.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+"build": {
+    "appId": "com.steamverde.launcher",
+    "productName": "Steam Verde Launcher",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "steamverdeoficial",
+        "repo": "steam-verde-launcher"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Steam Verde"
+    }
+  },
+  "keywords": [],
+  "author": "Steam Verde",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "electron": "^39.2.4",
+    "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "discord-rpc": "^4.0.1",
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.6.2"
+  }
+}
