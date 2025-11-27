@@ -1,6 +1,6 @@
 # 🎮 Steam Verde Launcher
 
-![Version](https://img.shields.io/github/package-json/v/steamverdeoficial/steam-verde-launcher?style=for-the-badge&color=a4d007)
+![Version](https://img.shields.io/github/v/release/steamverdeoficial/steam-verde-launcher?style=for-the-badge&color=a4d007&label=VERSÃO)
 ![Platform](https://img.shields.io/badge/platform-Windows-blue?style=for-the-badge&logo=windows)
 ![Status](https://img.shields.io/badge/status-Stable-success?style=for-the-badge)
 
