@@ -131,3 +131,70 @@ button#loginBtn:disabled { background: #333; cursor: not-allowed; transform: non
 .footer-links { margin-top: 25px; text-align: center; font-size: 12px; }
 .footer-links a { color: #8f98a0; text-decoration: none; transition: 0.2s; }
 .footer-links a:hover { color: #a4d007; }
+
+/* --- Checkbox Personalizado --- */
+.checkbox-group {
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+}
+
+.checkbox-container {
+    display: flex;
+    align-items: center;
+    position: relative;
+    padding-left: 25px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #c7d5e0;
+    user-select: none;
+    text-transform: none; /* Remove o uppercase do label global */
+}
+
+.checkbox-container input {
+    position: absolute;
+    opacity: 0;
+    cursor: pointer;
+    height: 0;
+    width: 0;
+}
+
+.checkmark {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 18px;
+    width: 18px;
+    background-color: #323f55;
+    border: 1px solid #101214;
+    border-radius: 3px;
+}
+
+.checkbox-container:hover input ~ .checkmark {
+    background-color: #3e4c63;
+}
+
+.checkbox-container input:checked ~ .checkmark {
+    background-color: #a4d007; /* Verde Steam */
+    border-color: #a4d007;
+}
+
+.checkmark:after {
+    content: "";
+    position: absolute;
+    display: none;
+}
+
+.checkbox-container input:checked ~ .checkmark:after {
+    display: block;
+}
+
+.checkbox-container .checkmark:after {
+    left: 6px;
+    top: 2px;
+    width: 3px;
+    height: 8px;
+    border: solid #1b2838; /* Cor do check */
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}

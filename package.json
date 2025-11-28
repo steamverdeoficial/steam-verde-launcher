@@ -1,6 +1,6 @@
 {
   "name": "steam-verde-launcher",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "Launcher Exclusivo Steam Verde",
   "main": "main.js",
   "repository": {
@@ -11,7 +11,11 @@
     "start": "electron .",
     "dist": "electron-builder"
   },
-"build": {
+  "files": [
+    "**/*",
+    "assets/**/*"
+  ],
+  "build": {
     "appId": "com.steamverde.launcher",
     "productName": "Steam Verde Launcher",
     "publish": [

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Steam Verde</title>
+    <style>
+        body {
+            margin: 0; padding: 0;
+            background-color: #1b2838; /* Fundo geral */
+            overflow: hidden; /* Sem barras de rolagem na janela principal */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+        }
+
+        /* --- BARRA DE TÍTULO --- */
+        #sv-custom-titlebar {
+            height: 32px;
+            background: #171a21;
+            color: #c7d5e0;
+            display: flex; justify-content: space-between; align-items: center;
+            -webkit-app-region: drag; /* Permite arrastar */
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+
+        .sv-left-area {
+            display: flex; align-items: center; height: 100%; padding-left: 10px;
+        }
+
+        .sv-app-icon {
+            height: 18px; width: 18px; margin-right: 10px;
+            pointer-events: none;
+        }
+
+        .sv-bar-logo {
+            font-size: 12px; font-weight: bold; letter-spacing: 1px; color: #8f98a0;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+
+        .sv-bar-controls {
+            display: flex; height: 100%; -webkit-app-region: no-drag; align-items: center;
+        }
+
+        /* Ícone de Update */
+        #sv-update-btn {
+            display: none;
+            color: #43b581; background: transparent; border: none;
+            cursor: pointer; margin-right: 15px; height: 32px;
+            animation: sv-pulse 2s infinite;
+        }
+        #sv-update-btn:hover { color: #a4d007; }
+        @keyframes sv-pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+
+        /* Menu de Usuário */
+        .sv-user-menu {
+            position: relative; display: flex; align-items: center; cursor: pointer;
+            padding: 0 15px; height: 100%; transition: 0.2s; border-left: 1px solid #282c34;
+        }
+        .sv-user-menu:hover { background: #323f55; color: white; }
+        .sv-user-name {
+            font-size: 13px; font-weight: 600; margin-right: 8px; color: #a4d007;
+            max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .sv-arrow { font-size: 10px; }
+
+        /* Dropdown */
+        #sv-logout-dropdown {
+            position: absolute; top: 32px; right: 0; background: #323f55;
+            width: 150px; display: none; flex-direction: column; z-index: 9999;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5); border-bottom-left-radius: 4px;
+        }
+        #sv-logout-dropdown.show { display: flex; }
+        .sv-logout-item {
+            padding: 12px 15px; font-size: 13px; cursor: pointer; color: #c7d5e0;
+        }
+        .sv-logout-item:hover { background: #c21a1a; color: white; }
+
+        /* Botões de Janela */
+        .sv-win-btn {
+            width: 45px; height: 100%; border: none; background: transparent;
+            color: #8f98a0; font-family: "Segoe MDL2 Assets", sans-serif; cursor: pointer;
+            font-size: 10px; display: flex; justify-content: center; align-items: center;
+            transition: background 0.2s;
+        }
+        .sv-win-btn:not(.sv-close-btn):hover { background: #323f55; color: white; }
+        .sv-close-btn:hover { background: #a4d007 !important; color: #171a21 !important; }
+    </style>
+</head>
+<body>
+
+    <div id="sv-custom-titlebar">
+        <div class="sv-left-area">
+            <img src="icon.ico" class="sv-app-icon">
+            <div class="sv-bar-logo" id="app-title">STEAM VERDE</div>
+        </div>
+        
+        <div class="sv-bar-controls">
+            <button id="sv-update-btn" onclick="window.ipc.restartApp()" title="Atualizar">
+                <svg style="width:20px;height:20px;fill:currentColor" viewBox="0 0 24 24">
+                    <path d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z" />
+                </svg>
+            </button>
+
+            <div class="sv-user-menu" onclick="toggleDropdown()">
+                <span class="sv-user-name" id="username-display">Assinante</span>
+                <span class="sv-arrow">▼</span>
+                <div id="sv-logout-dropdown">
+                    <div class="sv-logout-item" onclick="doLogout()">Sair da conta</div>
+                </div>
+            </div>
+
+            <button class="sv-win-btn" onclick="window.ipc.minimize()">&#xE921;</button>
+            <button class="sv-win-btn" onclick="window.ipc.maximize()">&#xE922;</button>
+            <button class="sv-win-btn sv-close-btn" onclick="window.ipc.close()">&#xE8BB;</button>
+        </div>
+    </div>
+
+    <script>
+        // Lógica da Interface
+        function toggleDropdown() {
+            document.getElementById('sv-logout-dropdown').classList.toggle('show');
+        }
+
+        function doLogout() {
+            if(confirm("Deseja sair da conta?")) {
+                window.ipc.logout();
+            }
+        }
+
+        // Fecha dropdown ao clicar fora
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.sv-user-menu')) {
+                document.getElementById('sv-logout-dropdown').classList.remove('show');
+            }
+        });
+
+        // Recebe atualizações do Main Process
+        window.ipc.onUpdateTitle((_event, title) => {
+            const cleanTitle = title.replace(' - Steam Verde', '');
+            document.getElementById('app-title').innerText = cleanTitle + ' | STEAM VERDE';
+        });
+
+        window.ipc.onUpdateUser((_event, name) => {
+            document.getElementById('username-display').innerText = name;
+        });
+
+        window.ipc.onShowUpdateBtn((_event) => {
+            document.getElementById('sv-update-btn').style.display = 'flex';
+        });
+    </script>
+</body>
+</html>

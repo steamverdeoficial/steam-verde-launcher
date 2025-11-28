@@ -20,6 +20,8 @@ if (btnClose) {
 const loginForm = document.getElementById('loginForm');
 const loginBtn = document.getElementById('loginBtn');
 const errorMsg = document.getElementById('error-msg');
+// NOVO: Captura o checkbox "Permanecer Conectado"
+const rememberMe = document.getElementById('rememberMe');
 
 // URL da API que criamos no WordPress
 const API_URL = 'https://steamverde.net/novo/wp-json/steamverde/v1/launcher-login';
@@ -35,6 +37,8 @@ loginForm.addEventListener('submit', async (e) => {
 
     const login = document.getElementById('username').value;
     const password = document.getElementById('password').value;
+    // NOVO: Verifica se o usuário marcou a caixa (retorna true ou false)
+    const isRemember = rememberMe ? rememberMe.checked : false;
 
     try {
         const response = await fetch(API_URL, {
@@ -44,7 +48,8 @@ loginForm.addEventListener('submit', async (e) => {
             },
             body: JSON.stringify({
                 login: login,
-                password: password
+                password: password,
+                remember: isRemember // NOVO: Envia essa opção para a API
             })
         });
 
@@ -56,12 +61,12 @@ loginForm.addEventListener('submit', async (e) => {
             loginBtn.style.background = '#a4d007'; // Verde Steam Verde
             
             setTimeout(() => {
-                // Envia o comando para o main.js fechar essa janela, 
-                // salvar o cookie e abrir o site na nova janela
+                // Envia o comando para o main.js
                 ipcRenderer.send('login-success', {
                     url: 'https://steamverde.net/novo', // URL do site
                     cookieName: data.cookie_name,
-                    cookieValue: data.cookie_value
+                    cookieValue: data.cookie_value,
+                    expirationDate: data.cookie_expiration // NOVO: Usa a data calculada pelo PHP (1 ano ou 2 dias)
                 });
             }, 1000);
 
