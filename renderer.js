@@ -37,7 +37,8 @@ loginForm.addEventListener('submit', async (e) => {
 
     const login = document.getElementById('username').value;
     const password = document.getElementById('password').value;
-    // NOVO: Verifica se o usuário marcou a caixa (retorna true ou false)
+    
+    // Verifica se o elemento existe antes de pegar a propriedade checked para evitar erro
     const isRemember = rememberMe ? rememberMe.checked : false;
 
     try {
@@ -49,7 +50,7 @@ loginForm.addEventListener('submit', async (e) => {
             body: JSON.stringify({
                 login: login,
                 password: password,
-                remember: isRemember // NOVO: Envia essa opção para a API
+                remember: isRemember // Envia a opção para a API
             })
         });
 
@@ -61,12 +62,13 @@ loginForm.addEventListener('submit', async (e) => {
             loginBtn.style.background = '#a4d007'; // Verde Steam Verde
             
             setTimeout(() => {
-                // Envia o comando para o main.js
+                // Envia o comando para o main.js fechar essa janela
                 ipcRenderer.send('login-success', {
                     url: 'https://steamverde.net/novo', // URL do site
                     cookieName: data.cookie_name,
                     cookieValue: data.cookie_value,
-                    expirationDate: data.cookie_expiration // NOVO: Usa a data calculada pelo PHP (1 ano ou 2 dias)
+                    expirationDate: data.cookie_expiration,
+                    user_display_name: data.user_display_name // <--- ADICIONADO: Envia o nome para a barra
                 });
             }, 1000);
 
