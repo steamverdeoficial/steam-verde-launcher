@@ -101,13 +101,20 @@ const CUSTOM_UI_CSS = `
       color: #fff; padding: 14px 28px; border-radius: 40px;
       font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 14px;
       box-shadow: 0 0 20px rgba(164, 208, 7, 0.4);
-      cursor: pointer; z-index: 2147483646; 
+      cursor: pointer; z-index: 2147483647 !important;
       display: none; align-items: center; gap: 12px; 
-      transition: bottom 0.5s cubic-bezier(0.22, 1, 0.36, 1), transform 0.2s;
+      transition: bottom 0.5s cubic-bezier(0.22, 1, 0.36, 1), transform 0.2s ease, box-shadow 0.2s ease;
       border: 2px solid rgba(255,255,255,0.1); letter-spacing: 0.5px;
   }
+  
   #sv-float-dl-btn.pushed-up { bottom: 140px !important; }
-  #sv-float-dl-btn:hover { transform: scale(1.05); }
+  #sv-float-dl-btn:hover { transform: scale(1.05) translateY(-2px); box-shadow: 0 10px 30px rgba(164, 208, 7, 0.6); background: #b8e60d; }
+  
+  #sv-float-dl-btn.install-mode {
+      background: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%) !important;
+      box-shadow: 0 0 20px rgba(106, 17, 203, 0.5) !important;
+  }
+  #sv-float-dl-btn.install-mode:hover { background: #7b2dd6 !important; }
   #sv-float-dl-btn svg { width: 24px; height: 24px; fill: white; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3)); }
 
   /* BOTÃO TOGGLE */
@@ -140,21 +147,24 @@ const CUSTOM_UI_CSS = `
   }
   #sv-download-bar.visible { bottom: 0; }
 
-  /* LEGENDA CORRIGIDA */
+  /* LEGENDA - AGORA FORA DO CONTEÚDO PARA BRILHAR */
   #sv-dl-legend {
-      position: absolute; top: 15px; right: 30px;
-      display: flex; gap: 15px; 
-      z-index: 100 !important; /* Camada superior dentro da barra */
+      position: absolute; 
+      top: 5px; /* MAIS ALTO */
+      right: 30px;
+      display: flex; gap: 20px; 
+      z-index: 2147483647 !important; /* ACIMA DE TUDO */
       pointer-events: none;
-      font-family: 'Segoe UI', sans-serif; font-size: 11px; font-weight: 800;
+      font-family: 'Segoe UI', sans-serif; font-size: 11px; font-weight: 700;
   }
   .sv-legend-item { 
-      display: flex; align-items: center; gap: 6px; 
+      display: flex; align-items: center; gap: 8px; 
       color: #ffffff !important; 
-      text-shadow: 0 1px 4px rgba(0,0,0,1); 
+      opacity: 1 !important; 
+      text-shadow: 0 0 4px #000, 0 0 2px #000; /* CONTORNO PRETO PARA LEGIBILIDADE */
       letter-spacing: 0.5px;
   }
-  .sv-legend-dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.2); }
+  .sv-legend-line { width: 18px; height: 4px; border-radius: 2px; display:block; box-shadow: 0 0 5px rgba(0,0,0,0.5); }
 
   #sv-dl-graph-wrapper { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
   #sv-dl-canvas { width: 100%; height: 100%; display: block; }
@@ -175,7 +185,24 @@ const CUSTOM_UI_CSS = `
   .btn-files:hover { background: #fff; color: #1b2838; } .btn-pause:hover { background: #ffcc00; color: #000; } .btn-folder:hover { background: #00d9ff; color: #000; } .btn-stop:hover { background: #ff4d4d; color: #fff; }
   .sv-prio-btn.active { color: #ffcc00 !important; filter: drop-shadow(0 0 5px rgba(255, 204, 0, 0.8)); transform: scale(1.1); }
   
-  #sv-files-modal { position: fixed; bottom: 120px; right: 30px; width: 500px; max-height: 500px; background: #1b2838; border: 1px solid #46bd14; border-radius: 10px; display: none; flex-direction: column; z-index: 2147483647 !important; box-shadow: 0 20px 50px rgba(0,0,0,1); }
+  #sv-files-modal { 
+      position: fixed; bottom: 120px; right: 30px; 
+      width: 500px; max-height: 400px; 
+      background: #1b2838; border: 1px solid #46bd14; border-radius: 10px; 
+      display: none; flex-direction: column; 
+      z-index: 2147483647 !important; 
+      box-shadow: 0 20px 50px rgba(0,0,0,1);
+      overflow: hidden; 
+  }
+  .sv-modal-body {
+      overflow-y: auto;
+      flex: 1;
+      max-height: 340px; 
+  }
+  .sv-modal-body::-webkit-scrollbar { width: 8px; }
+  .sv-modal-body::-webkit-scrollbar-track { background: #171a21; }
+  .sv-modal-body::-webkit-scrollbar-thumb { background: #323f55; border-radius: 4px; }
+  .sv-modal-body::-webkit-scrollbar-thumb:hover { background: #a4d007; }
 `;
 
 const LOADING_CSS = ` 
@@ -208,7 +235,7 @@ const CLICK_LISTENER_SCRIPT = `
 const HIDE_LOADER_SCRIPT = `(function() { const loader = document.getElementById('sv-launcher-loader'); if (loader) { loader.classList.remove('visible'); setTimeout(() => { loader.style.display = 'none'; }, 200); } })();`; 
 const SHOW_UPDATE_BTN_SCRIPT = `const btn = document.getElementById('sv-update-btn'); if(btn) btn.style.display = 'flex';`; 
 
-// --- INJEÇÃO DA BARRA E BOTÃO TOGGLE ---
+// --- INJEÇÃO UI ---
 const INJECT_UI_SCRIPT = `
     if (!document.getElementById('sv-float-dl-btn')) {
         const btn = document.createElement('div');
@@ -224,14 +251,9 @@ const INJECT_UI_SCRIPT = `
     if (!document.getElementById('sv-download-bar')) {
         const bar = document.createElement('div');
         bar.id = 'sv-download-bar';
+        // A LEGENDA FOI MOVIDA PARA O FINAL DO CONTAINER (Z-INDEX SUPERIOR)
         bar.innerHTML = \`
-            <div id="sv-dl-graph-wrapper">
-                <canvas id="sv-dl-canvas"></canvas>
-                <div id="sv-dl-legend">
-                    <div class="sv-legend-item"><div class="sv-legend-dot" style="background:#a4d007;box-shadow:0 0 5px #a4d007"></div>Velocidade</div>
-                    <div class="sv-legend-item"><div class="sv-legend-dot" style="background:#00d9ff;box-shadow:0 0 5px #00d9ff"></div>Conexões</div>
-                </div>
-            </div>
+            <div id="sv-dl-graph-wrapper"><canvas id="sv-dl-canvas"></canvas></div>
             <div class="sv-dl-content">
                 <div class="sv-dl-info">
                     <div class="sv-dl-title">
@@ -273,6 +295,11 @@ const INJECT_UI_SCRIPT = `
                     </button>
                 </div>
             </div>
+            
+            <div id="sv-dl-legend">
+                <div class="sv-legend-item"><div class="sv-legend-line" style="background:#a4d007;box-shadow:0 0 5px #a4d007"></div>Velocidade</div>
+                <div class="sv-legend-item"><div class="sv-legend-line" style="background:#00d9ff;box-shadow:0 0 5px #00d9ff"></div>Conexões</div>
+            </div>
         \`;
         document.body.appendChild(bar);
         window.dlCanvas = document.getElementById('sv-dl-canvas');
@@ -309,8 +336,13 @@ const INJECT_UI_SCRIPT = `
         const tab = document.getElementById('sv-toggle-tab');
 
         if(btn) {
-            const shouldShow = mag ? 'flex' : 'none';
-            if(btn.style.display !== shouldShow) btn.style.display = shouldShow;
+            if(btn.classList.contains('install-mode')) {
+                btn.style.display = 'flex';
+            } else {
+                const shouldShow = mag ? 'flex' : 'none';
+                if(btn.style.display !== shouldShow) btn.style.display = shouldShow;
+            }
+            
             if(bar && bar.classList.contains('visible')) {
                 if(!btn.classList.contains('pushed-up')) btn.classList.add('pushed-up');
                 if(!tab.classList.contains('raised')) tab.classList.add('raised');
@@ -562,19 +594,38 @@ function startTorrentDownload(magnetLink) {
 
         torrent.on('done', () => {
             if (isPausedManual) return;
-            // Libera trava do arquivo e avisa usuário
-            new Notification({ title: 'Steam Verde', body: 'Download Concluído! Arquivo Liberado.' }).show();
+            
+            new Notification({ title: 'Steam Verde', body: 'Download Concluído! Arquivo Pronto para Instalar.' }).show();
+            
             if(siteWindow && !siteWindow.isDestroyed()) {
                 siteWindow.webContents.send('torrent-done');
-                // Força status 100% visual
                 siteWindow.webContents.send('torrent-progress', {
-                    name: torrent.name, progress: "100.0", speed: "0 B/s", peers: 0, eta: "CONCLUÍDO", paused: false, chart: chartData, peersChart: peersData
+                    name: torrent.name, progress: "100.0", speed: "0 B/s", peers: 0, eta: "Download Concluído", paused: false, chart: chartData, peersChart: peersData
                 });
             }
+
+            const fullPath = path.join(downloadPath, torrent.name);
+            fs.readdir(fullPath, (err, files) => {
+                if(!err && files) {
+                    const setup = files.find(f => f.toLowerCase().includes('setup.exe')) 
+                               || files.find(f => f.toLowerCase().includes('install.exe'))
+                               || files.find(f => f.toLowerCase().endsWith('.exe'));
+                    
+                    if(setup) {
+                        const setupPath = path.join(fullPath, setup);
+                        siteWindow.webContents.send('install-ready', setupPath);
+                    }
+                }
+            });
+
             torrent.destroy(() => { currentTorrent = null; });
         });
     });
 }
+
+ipcMain.on('launch-installer', (event, filePath) => {
+    shell.openPath(filePath);
+});
 
 ipcMain.on('torrent-pause', () => {
     if (!currentTorrent) return;
@@ -605,6 +656,7 @@ ipcMain.on('torrent-stop', () => {
         if(siteWindow) siteWindow.webContents.executeJavaScript(`
             document.getElementById('sv-download-bar').classList.remove('visible');
             document.getElementById('sv-toggle-tab').style.display = 'none';
+            document.getElementById('sv-float-dl-btn').classList.remove('install-mode');
             localStorage.setItem('sv-bar-collapsed', 'false');
         `);
     }

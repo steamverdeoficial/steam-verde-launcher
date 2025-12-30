@@ -44,6 +44,20 @@ contextBridge.exposeInMainWorld('ipc', {
     log: (msg) => ipcRenderer.send('console-log', msg)
 });
 
+let installPath = null; 
+
+ipcRenderer.on('install-ready', (event, path) => {
+    installPath = path; 
+    const btn = document.getElementById('sv-float-dl-btn');
+    if(btn) {
+        btn.classList.add('install-mode');
+        btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8,5.14V19.14L19,12.14L8,5.14Z" /></svg> INSTALAR AGORA';
+        btn.onclick = function() {
+            ipcRenderer.send('launch-installer', installPath);
+        };
+    }
+});
+
 ipcRenderer.on('torrent-progress', (event, data) => {
     const doc = document;
     
@@ -80,7 +94,6 @@ ipcRenderer.on('torrent-progress', (event, data) => {
         }
     }
 
-    // --- GRÁFICO DUPLO (VELOCIDADE + PEERS) ---
     const canvas = doc.getElementById('sv-dl-canvas');
     if (canvas && data.chart && data.peersChart) {
         const ctx = canvas.getContext('2d');
@@ -90,7 +103,7 @@ ipcRenderer.on('torrent-progress', (event, data) => {
         
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 1. DESENHA VELOCIDADE (VERDE - COM FUNDO)
+        // 1. VELOCIDADE
         ctx.beginPath();
         const maxVal = Math.max(...data.chart, 100000); 
         const step = canvas.width / (data.chart.length - 1);
@@ -121,14 +134,12 @@ ipcRenderer.on('torrent-progress', (event, data) => {
         ctx.strokeStyle = "rgba(164, 208, 7, 0.9)";
         ctx.stroke();
 
-        // 2. DESENHA PEERS (AZUL CYAN - SEM FUNDO, POR CIMA)
+        // 2. PEERS
         ctx.beginPath();
-        // Escala normalizada para peers (mínimo 10 para evitar divisão por zero)
         const maxPeers = Math.max(...data.peersChart, 10); 
         
         data.peersChart.forEach((val, index) => {
             const x = index * step;
-            // Usa 80% da altura para não colar no topo
             const y = canvas.height - ((val / maxPeers) * (canvas.height * 0.8)); 
             
             if(index === 0) ctx.moveTo(x, y);
@@ -141,7 +152,7 @@ ipcRenderer.on('torrent-progress', (event, data) => {
         });
         
         ctx.lineWidth = 2;
-        ctx.strokeStyle = "#00d9ff"; // Azul Cyan Elétrico
+        ctx.strokeStyle = "#00d9ff"; 
         ctx.stroke();
     }
 });
