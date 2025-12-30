@@ -24,7 +24,7 @@ const errorMsg = document.getElementById('error-msg');
 const rememberMe = document.getElementById('rememberMe');
 
 // URL da API que criamos no WordPress
-const API_URL = 'https://steamverde.net/novo/wp-json/steamverde/v1/launcher-login';
+const API_URL = 'https://steamverde.net/wp-json/steamverde/v1/launcher-login';
 
 // --- 3. LÓGICA DE LOGIN ---
 loginForm.addEventListener('submit', async (e) => {
@@ -64,7 +64,7 @@ loginForm.addEventListener('submit', async (e) => {
             setTimeout(() => {
                 // Envia o comando para o main.js fechar essa janela
                 ipcRenderer.send('login-success', {
-                    url: 'https://steamverde.net/novo', // URL do site
+                    url: 'https://steamverde.net', // URL do site
                     cookieName: data.cookie_name,
                     cookieValue: data.cookie_value,
                     expirationDate: data.cookie_expiration,
