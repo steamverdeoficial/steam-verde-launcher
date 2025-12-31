@@ -312,13 +312,18 @@ async function startTorrentDownload(magnetLink, gameImage) {
             }
 
             const fullPath = path.join(downloadPath, torrent.name);
-            saveGameToDb(torrent.name, fullPath, gameImage); // SALVA COM IMAGEM
+            saveGameToDb(torrent.name, fullPath, gameImage); 
 
+            // --- CORREÇÃO DO BUG AQUI ---
             fs.readdir(fullPath, (err, files) => {
                 if(!err && files) {
-                    const setup = files.find(f => f.toLowerCase().includes('setup.exe') 
-                               || files.find(f => f.toLowerCase().includes('install.exe'))
-                               || files.find(f => f.toLowerCase().endsWith('.exe')));
+                    // O erro estava aqui: havia um 'files.find' repetido dentro da condição
+                    // Agora corrigido para verificar apenas o arquivo 'f'
+                    const setup = files.find(f => 
+                        f.toLowerCase().includes('setup.exe') || 
+                        f.toLowerCase().includes('install.exe') || 
+                        (f.toLowerCase().endsWith('.exe') && !f.toLowerCase().includes('crash') && !f.toLowerCase().includes('unity'))
+                    );
                     
                     if(setup) {
                         const setupPath = path.join(fullPath, setup);
@@ -326,6 +331,7 @@ async function startTorrentDownload(magnetLink, gameImage) {
                     }
                 }
             });
+            // -----------------------------
 
             torrent.destroy(() => { currentTorrent = null; });
         });
