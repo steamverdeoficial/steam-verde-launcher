@@ -1,17 +1,88 @@
 // src/scripts.js
 
 const INJECT_LOADER_DOM = `if (!document.getElementById('sv-launcher-loader')) { const loader = document.createElement('div'); loader.id = 'sv-launcher-loader'; loader.innerHTML = '<div class="sv-spinner"></div>'; document.body.appendChild(loader); }`; 
+
+// LÓGICA DE CAPTURA DE IMAGEM (Agora com logs visíveis no terminal)
+const FIND_IMAGE_LOGIC = `
+    function svFindGameImage() {
+        window.ipc.log("[SV-DEBUG] Iniciando busca de imagem...");
+        let gameImg = '';
+        
+        // 1. Tenta pegar a imagem principal do WPDM (Seletor Exato)
+        const img1 = document.querySelector('.package-image img');
+        if (img1 && img1.src) {
+            window.ipc.log("[SV-DEBUG] Sucesso: Encontrado via .package-image img");
+            return img1.src;
+        }
+
+        // 2. Tenta pegar o LINK da imagem (Fancybox)
+        const link1 = document.querySelector('.package-image a');
+        if (link1 && link1.href && link1.href.match(/\\.(jpg|jpeg|png|webp)/i)) {
+            window.ipc.log("[SV-DEBUG] Sucesso: Encontrado via .package-image a (Link)");
+            return link1.href;
+        }
+
+        // 3. Busca por "img-fluid" dentro do conteúdo (Classe comum do Bootstrap/WordPress)
+        const imgFluid = document.querySelector('.entry-content img.img-fluid');
+        if (imgFluid && imgFluid.src) {
+            window.ipc.log("[SV-DEBUG] Sucesso: Encontrado via .img-fluid");
+            return imgFluid.src;
+        }
+
+        // 4. FORÇA BRUTA: Procura a MAIOR imagem dentro da área do post
+        window.ipc.log("[SV-DEBUG] Tentando força bruta (maior imagem)...");
+        const allImgs = document.querySelectorAll('.entry-content img');
+        let maxArea = 0;
+        let bestImg = '';
+        
+        allImgs.forEach(img => {
+            const area = img.width * img.height;
+            // Ignora ícones pequenos (< 100px)
+            if (area > maxArea && img.width > 100) {
+                maxArea = area;
+                bestImg = img.src;
+            }
+        });
+        
+        if (bestImg) {
+            window.ipc.log("[SV-DEBUG] Sucesso: Encontrada maior imagem do post");
+            return bestImg;
+        }
+
+        // 5. Fallback OG:Image (Metadados invisíveis)
+        const ogImg = document.querySelector('meta[property="og:image"]');
+        if (ogImg && ogImg.content) {
+            window.ipc.log("[SV-DEBUG] Sucesso: Encontrado via Meta Tag OG");
+            return ogImg.content;
+        }
+
+        window.ipc.log("[SV-DEBUG] FALHA: Nenhuma imagem encontrada.");
+        return '';
+    }
+`;
+
 const CLICK_LISTENER_SCRIPT = ` 
+  ${FIND_IMAGE_LOGIC} 
+
   document.body.addEventListener('click', (e) => { 
     const link = e.target.closest('a'); 
-    if (link && link.href) { 
-        if (link.href.startsWith('magnet:') || link.href.endsWith('.torrent')) {
-             e.preventDefault(); e.stopPropagation();
-             window.ipc.startTorrent(link.href);
-             return;
-        }
+    
+    // Clique em Link Magnet/Torrent
+    if (link && link.href && (link.href.startsWith('magnet:') || link.href.endsWith('.torrent'))) {
+         e.preventDefault(); e.stopPropagation();
+         
+         window.ipc.log("[SV-DEBUG] Clique detectado no link!");
+         const gameImg = svFindGameImage();
+         
+         window.ipc.startTorrent(link.href, gameImg);
+         return;
+    }
+    
+    // Loader visual para navegação interna
+    if (link && link.href) {
         if (link.href.includes('#') || link.href.startsWith('javascript:') || link.href === window.location.href) return; 
         if (!link.href.includes('steamverde.net')) return; 
+        
         const loader = document.getElementById('sv-launcher-loader'); 
         if (loader) { 
             loader.classList.add('visible'); 
@@ -20,11 +91,14 @@ const CLICK_LISTENER_SCRIPT = `
     } 
   }); 
 `; 
+
 const HIDE_LOADER_SCRIPT = `(function() { const loader = document.getElementById('sv-launcher-loader'); if (loader) { loader.classList.remove('visible'); setTimeout(() => { loader.style.display = 'none'; }, 200); } })();`; 
 const SHOW_UPDATE_BTN_SCRIPT = `const btn = document.getElementById('sv-update-btn'); if(btn) btn.style.display = 'flex';`; 
 
-// INJEÇÃO DA UI (ATUALIZADA PARA INCLUIR REAL DEBRID)
+// INJEÇÃO DA UI
 const INJECT_UI_SCRIPT = `
+    ${FIND_IMAGE_LOGIC} 
+
     if (!document.getElementById('sv-side-menu')) {
         const overlay = document.createElement('div');
         overlay.id = 'sv-menu-overlay';
@@ -59,7 +133,6 @@ const INJECT_UI_SCRIPT = `
         document.body.appendChild(modal);
     }
 
-    // MODAL DO REAL DEBRID
     if (!document.getElementById('sv-rd-modal')) {
         const modal = document.createElement('div');
         modal.id = 'sv-rd-modal';
@@ -100,9 +173,16 @@ const INJECT_UI_SCRIPT = `
         const btn = document.createElement('div');
         btn.id = 'sv-float-dl-btn';
         btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z" /></svg> DOWNLOAD VIA LAUNCHER';
+        
         btn.onclick = function() {
+            if(this.classList.contains('install-mode')) return;
+
             const mag = document.querySelector('a[href^="magnet:"]');
-            if(mag) window.ipc.startTorrent(mag.href);
+            if(mag) {
+                window.ipc.log("[SV-DEBUG] Botão flutuante clicado. Buscando imagem...");
+                const gameImg = svFindGameImage(); // <--- CHAMA A FUNÇÃO DE BUSCA
+                window.ipc.startTorrent(mag.href, gameImg);
+            }
         };
         document.body.appendChild(btn);
     }
@@ -131,7 +211,7 @@ const INJECT_UI_SCRIPT = `
                             <span id="sv-dl-peers" class="sv-stat-val">0 Peers</span>
                         </div>
                         <div class="sv-stat-item">
-                            <svg class="sv-stat-icon" viewBox="0 0 24 24"><path d="M12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12.5,7V12.25L17,14.92L16.25,16.15L11,13V7H12.5Z" /></svg>
+                            <svg class="sv-stat-icon" viewBox="0 0 24 24"><path d="M12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 12,2A10,10 0 0,1 12,2M12.5,7V12.25L17,14.92L16.25,16.15L11,13V7H12.5Z" /></svg>
                             <span id="sv-dl-eta" class="sv-stat-val">--:--</span>
                         </div>
                         <span id="sv-dl-perc" style="margin-left:auto; font-size:18px; font-weight:900; color:#a4d007; text-shadow:0 0 10px rgba(164,208,7,0.5)">0%</span>
@@ -196,6 +276,7 @@ const INJECT_UI_SCRIPT = `
         if(btn) {
             if(btn.classList.contains('install-mode')) {
                 btn.style.display = 'flex';
+                // Não ocultamos mais se não tiver magnet, pois o modo instalação é prioritário
             } else {
                 const shouldShow = mag ? 'flex' : 'none';
                 if(btn.style.display !== shouldShow) btn.style.display = shouldShow;

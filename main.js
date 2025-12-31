@@ -7,6 +7,10 @@ const { autoUpdater } = require('electron-updater');
 const log = require('electron-log'); 
 const WebTorrent = require('webtorrent'); 
 
+// Módulos de Extração e Sistema
+const { execFile } = require('child_process');
+const sevenBin = require('7zip-bin');
+
 // --- MÓDULOS SEPARADOS ---
 const Styles = require('./src/styles');
 const Scripts = require('./src/scripts');
@@ -72,13 +76,18 @@ function formatBytes(bytes, decimals = 2) {
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
-// FUNÇÃO SAVE DB
-function saveGameToDb(name, path) {
+// FUNÇÃO SAVE DB (ATUALIZADA PARA SALVAR IMAGEM)
+function saveGameToDb(name, path, image) {
     try {
         const data = fs.readFileSync(gamesDbPath);
         const games = JSON.parse(data);
         if (!games.find(g => g.name === name)) {
-            games.push({ name: name, path: path, date: new Date().toISOString() });
+            games.push({ 
+                name: name, 
+                path: path, 
+                image: image || '', 
+                date: new Date().toISOString() 
+            });
             fs.writeFileSync(gamesDbPath, JSON.stringify(games));
         }
     } catch (e) { console.error(e); }
@@ -158,7 +167,6 @@ function createSiteWindow(targetUrl) {
 
   siteWindow.webContents.on('dom-ready', async () => { 
     try { 
-        // --- AQUI USAMOS OS MÓDULOS IMPORTADOS ---
         await siteWindow.webContents.insertCSS(Styles.TITLE_BAR_CSS); 
         await siteWindow.webContents.insertCSS(Styles.LOADING_CSS); 
         await siteWindow.webContents.insertCSS(Styles.CUSTOM_UI_CSS); 
@@ -178,13 +186,14 @@ function createSiteWindow(targetUrl) {
   siteWindow.webContents.on('will-navigate', (event, url) => {  
       if (url.startsWith('magnet:') || url.endsWith('.torrent')) {  
           event.preventDefault(); 
-          startTorrentDownload(url);
+          // Ajustado para capturar imagem no clique, aqui é fallback
+          startTorrentDownload(url, '');
           siteWindow.webContents.executeJavaScript(Scripts.HIDE_LOADER_SCRIPT).catch(() => {});  
       }  
   }); 
   siteWindow.webContents.setWindowOpenHandler(({ url }) => {  
       if (url.startsWith('magnet:') || url.endsWith('.torrent')) {  
-          startTorrentDownload(url);
+          startTorrentDownload(url, '');
           siteWindow.webContents.executeJavaScript(Scripts.HIDE_LOADER_SCRIPT).catch(() => {});  
           return { action: 'deny' };  
       }  
@@ -196,28 +205,28 @@ function createSiteWindow(targetUrl) {
 function setupNetworkInterception(sess) { 
     const filter = { urls: ['magnet:*', '*://*/*.torrent*'] }; 
     sess.webRequest.onBeforeRequest(filter, (details, callback) => { 
-        startTorrentDownload(details.url);
+        startTorrentDownload(details.url, '');
         callback({ cancel: true }); 
     }); 
 } 
 
-async function startTorrentDownload(magnetLink) {
+async function startTorrentDownload(magnetLink, gameImage) {
     if (currentTorrent) {
         dialog.showMessageBox(siteWindow, { type: 'info', title: 'Fila Cheia', message: 'Já existe um download em andamento.' });
         return;
     }
 
     // --- INTERCEPTAÇÃO REAL DEBRID ---
-    // Se o RD assumir, ele retorna true e a gente para por aqui.
-    // Passamos helpers para o módulo
+    // Passamos a imagem para o RD também
     const rdHandled = await RD.handleMagnet(magnetLink, siteWindow, downloadPath, {
         saveGameToDb,
-        formatBytes
+        formatBytes,
+        gameImage // Passa a capa para salvar no final
     });
 
     if(rdHandled) return; // RD assumiu ou usuário cancelou
 
-    // --- FLUXO TORRENT PADRÃO (SE NÃO FOR RD) ---
+    // --- FLUXO TORRENT PADRÃO ---
     siteWindow.webContents.executeJavaScript(`
         localStorage.setItem('sv-bar-collapsed', 'false');
         document.getElementById('sv-download-bar').classList.add('visible');
@@ -303,13 +312,13 @@ async function startTorrentDownload(magnetLink) {
             }
 
             const fullPath = path.join(downloadPath, torrent.name);
-            saveGameToDb(torrent.name, fullPath); // SALVA
+            saveGameToDb(torrent.name, fullPath, gameImage); // SALVA COM IMAGEM
 
             fs.readdir(fullPath, (err, files) => {
                 if(!err && files) {
-                    const setup = files.find(f => f.toLowerCase().includes('setup.exe')) 
+                    const setup = files.find(f => f.toLowerCase().includes('setup.exe') 
                                || files.find(f => f.toLowerCase().includes('install.exe'))
-                               || files.find(f => f.toLowerCase().endsWith('.exe'));
+                               || files.find(f => f.toLowerCase().endsWith('.exe')));
                     
                     if(setup) {
                         const setupPath = path.join(fullPath, setup);
@@ -382,7 +391,9 @@ ipcMain.on('torrent-toggle-file', (event, index, selected, isPriority) => {
 
 ipcMain.on('torrent-open-folder', () => shell.openPath(downloadPath));
 ipcMain.on('console-log', (event, msg) => console.log("[RENDERER]", msg));
-ipcMain.on('start-torrent-download', (event, url) => startTorrentDownload(url));
+
+// IPC MODIFICADO PARA RECEBER IMAGEM
+ipcMain.on('start-torrent-download', (event, url, image) => startTorrentDownload(url, image));
 
 // IPCs MENU
 ipcMain.on('get-my-games', (event) => {
@@ -397,11 +408,8 @@ ipcMain.on('remove-game-from-db', (event, gameName) => {
     try {
         if (fs.existsSync(gamesDbPath)) {
             const data = JSON.parse(fs.readFileSync(gamesDbPath));
-            // Filtra removendo o jogo que tem o nome igual
             const newGames = data.filter(g => g.name !== gameName);
             fs.writeFileSync(gamesDbPath, JSON.stringify(newGames));
-            
-            // Atualiza a lista na hora para o usuário ver sumindo
             event.reply('my-games-list', newGames);
         }
     } catch (e) { console.error(e); }
@@ -411,10 +419,77 @@ ipcMain.on('open-game-folder', (event, folderPath) => {
     shell.openPath(folderPath);
 });
 
-// --- IPCs REAL DEBRID ---
+// --- IPC EXTRAÇÃO 7ZIP (ROBUSTA) ---
+ipcMain.on('extract-archive', (event, archivePath) => {
+    const fileNameNoExt = path.basename(archivePath, path.extname(archivePath));
+    const targetDir = path.join(path.dirname(archivePath), fileNameNoExt);
+    
+    // Ajuste de caminho do 7zip para quando estiver empacotado
+    let pathTo7zip = sevenBin.path7za;
+    if (app.isPackaged) {
+        pathTo7zip = pathTo7zip.replace('app.asar', 'app.asar.unpacked');
+    }
+
+    event.reply('extract-start');
+    console.log(`[EXTRACTION] Tentando extrair: "${archivePath}"`);
+    console.log(`[EXTRACTION] Destino: "${targetDir}"`);
+
+    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+
+    // Comando nativo do 7zip: x (extrair), -o (destino), -y (sim p/ tudo)
+    const args = ['x', archivePath, `-o${targetDir}`, '-y', '-bsp1'];
+
+    execFile(pathTo7zip, args, (error, stdout, stderr) => {
+        if (error) {
+            console.error("[EXTRACTION] Erro Fatal:", error);
+            dialog.showMessageBox({ 
+                type: 'error', 
+                title: 'Erro na Extração', 
+                message: 'Ocorreu um erro ao tentar extrair o arquivo.\nDetalhe: ' + stderr 
+            });
+            event.reply('extract-done', { success: false });
+            return;
+        }
+
+        console.log("[EXTRACTION] Sucesso!");
+        
+        let setupPath = null;
+        try {
+            function findSetup(dir) {
+                const files = fs.readdirSync(dir);
+                for (const file of files) {
+                    const fullPath = path.join(dir, file);
+                    const stat = fs.statSync(fullPath);
+                    if (stat.isDirectory()) {
+                        const found = findSetup(fullPath);
+                        if (found) return found;
+                    } else {
+                        const name = file.toLowerCase();
+                        if (name.includes('setup.exe') || name.includes('install.exe') || (name.endsWith('.exe') && !name.includes('crash') && !name.includes('unity'))) {
+                            return fullPath;
+                        }
+                    }
+                }
+                return null;
+            }
+
+            setupPath = findSetup(targetDir);
+
+            if(setupPath) {
+                event.reply('extract-done', { success: true, setup: setupPath });
+            } else {
+                event.reply('extract-done', { success: true, setup: null, folder: targetDir });
+            }
+
+        } catch(e) {
+            event.reply('extract-done', { success: true, setup: null, folder: targetDir });
+        }
+    });
+});
+
+// IPCs REAL DEBRID
 ipcMain.on('rd-save-token', (e, token) => {
     RD.saveToken(token);
-    // Tenta validar e dar feedback visual
     RD.getUserInfo().then(info => {
         if(info) {
              new Notification({title: "Real-Debrid", body: `Conectado como ${info.username}`}).show();
@@ -426,7 +501,6 @@ ipcMain.on('rd-save-token', (e, token) => {
     });
 });
 ipcMain.on('rd-remove-token', () => RD.removeToken());
-
 
 const client = torrentClient;
 

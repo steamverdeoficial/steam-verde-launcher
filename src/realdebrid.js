@@ -6,14 +6,14 @@ const https = require('https');
 const { app, dialog, Notification } = require('electron');
 
 let rdToken = null;
-let rdActiveDownload = null; // Objeto de controle
+let rdActiveDownload = null;
 
 const RD_API = 'https://api.real-debrid.com/rest/1.0';
 const CHROME_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
 const rdConfigPath = path.join(app.getPath('userData'), 'rd_config.json');
 
-// Agente para manter conexões vivas
+// Agente KeepAlive
 const agent = new https.Agent({  
     keepAlive: true,
     keepAliveMsecs: 5000,
@@ -52,7 +52,6 @@ async function getUserInfo() {
     } catch(e) { return null; }
 }
 
-// --- CLASSE GERENCIADORA DE DOWNLOAD ---
 class DownloadManager {
     constructor(url, filePath, win, callbacks) {
         this.url = url;
@@ -65,7 +64,6 @@ class DownloadManager {
         this.writer = null;
         this.currentRequest = null;
         
-        // Dados Gráficos
         this.chartData = new Array(150).fill(0);
         this.peersData = new Array(150).fill(100);
         this.lastTime = Date.now();
@@ -73,16 +71,15 @@ class DownloadManager {
     }
 
     async start() {
-        // 1. Pegar tamanho total primeiro (HEAD request)
         try {
             const headRes = await axios.head(this.url, { 
                 headers: { 'User-Agent': CHROME_USER_AGENT },
                 httpsAgent: agent 
             });
             this.totalBytes = parseInt(headRes.headers['content-length'], 10);
-            console.log(`[RD-MANAGER] Tamanho Total: ${this.totalBytes}`);
+            console.log(`[RD-MANAGER] Tamanho Total Detectado: ${this.totalBytes}`);
         } catch (e) {
-            console.error("[RD-MANAGER] Falha ao pegar tamanho. Tentando GET direto...");
+            console.log("[RD-MANAGER] Não foi possível pegar tamanho via HEAD.");
         }
 
         return this.downloadLoop();
@@ -90,11 +87,10 @@ class DownloadManager {
 
     async downloadLoop() {
         let retries = 0;
-        const MAX_RETRIES = 50; // Tenta muitas vezes antes de desistir
+        const MAX_RETRIES = 50; 
 
         while (!this.canceled && (this.downloadedBytes < this.totalBytes || this.totalBytes === 0)) {
             try {
-                // Verifica quanto já temos no disco
                 if (fs.existsSync(this.filePath)) {
                     this.downloadedBytes = fs.statSync(this.filePath).size;
                 } else {
@@ -102,26 +98,22 @@ class DownloadManager {
                 }
 
                 if (this.totalBytes > 0 && this.downloadedBytes >= this.totalBytes) {
-                    console.log("[RD-MANAGER] Arquivo já está completo no disco.");
+                    console.log("[RD-MANAGER] Arquivo já está completo.");
                     break; 
                 }
 
-                console.log(`[RD-MANAGER] Iniciando/Retomando de: ${this.downloadedBytes} bytes (Tentativa ${retries})`);
-
-                // Configura Range se não for o começo
                 const requestHeaders = { 
                     'User-Agent': CHROME_USER_AGENT,
                     'Connection': 'keep-alive'
                 };
+                
+                let isResume = false;
                 if (this.downloadedBytes > 0) {
                     requestHeaders['Range'] = `bytes=${this.downloadedBytes}-`;
+                    isResume = true;
+                    console.log(`[RD-MANAGER] Tentando resumir de: ${this.downloadedBytes}`);
                 }
 
-                // Cria Stream de Escrita (Append se já tem dados, Write se é novo)
-                const flags = this.downloadedBytes > 0 ? 'a' : 'w';
-                this.writer = fs.createWriteStream(this.filePath, { flags: flags });
-
-                // Faz a requisição
                 const controller = new AbortController();
                 this.currentRequest = controller;
                 
@@ -130,37 +122,41 @@ class DownloadManager {
                     method: 'GET',
                     responseType: 'stream',
                     headers: requestHeaders,
-                    timeout: 0, // Sem timeout do axios
+                    timeout: 0, 
                     httpsAgent: agent,
-                    signal: controller.signal
+                    signal: controller.signal,
+                    validateStatus: (status) => status < 400 
                 });
 
-                // Se não tinhamos o tamanho total, pega agora
-                if (this.totalBytes === 0 && response.headers['content-length']) {
-                    this.totalBytes = parseInt(response.headers['content-length'], 10) + this.downloadedBytes;
+                // BLINDAGEM CONTRA CORRUPÇÃO (200 vs 206)
+                if (isResume && response.status === 200) {
+                    console.warn("[RD-MANAGER] Resume rejeitado (200 OK). Reiniciando para evitar corrupção.");
+                    this.downloadedBytes = 0;
+                    this.writer = fs.createWriteStream(this.filePath, { flags: 'w' });
+                } else {
+                    const flags = this.downloadedBytes > 0 ? 'a' : 'w';
+                    this.writer = fs.createWriteStream(this.filePath, { flags: flags });
                 }
 
-                // Processa o stream
-                await this.streamToFile(response.data);
+                if (this.totalBytes === 0 && response.headers['content-length']) {
+                    const contentLength = parseInt(response.headers['content-length'], 10);
+                    this.totalBytes = (response.status === 206) ? (contentLength + this.downloadedBytes) : contentLength;
+                }
 
-                // Se chegou aqui sem erro, ou acabou ou o loop vai checar se completou
-                retries = 0; // Reseta retries se baixou algo com sucesso
+                await this.streamToFile(response.data);
+                retries = 0; 
                 
             } catch (err) {
                 if (this.canceled) return false;
-                
-                console.error(`[RD-MANAGER] Erro na conexão: ${err.message}. Reconectando em 3s...`);
+                console.error(`[RD-MANAGER] Erro: ${err.message}. Reconectando em 3s...`);
                 retries++;
-                if (retries > MAX_RETRIES) throw new Error("Muitas falhas de conexão consecutivas.");
-                
-                if (this.writer) this.writer.close(); // Garante que fecha o arquivo para não corromper
-                await sleep(3000); // Espera 3s antes de tentar de novo
+                if (retries > MAX_RETRIES) throw new Error("Muitas falhas consecutivas.");
+                if (this.writer) this.writer.close();
+                await sleep(3000);
             }
         }
 
         if (this.canceled) return false;
-        
-        // Sucesso Final
         return true;
     }
 
@@ -169,13 +165,12 @@ class DownloadManager {
             let sessionDownloaded = 0;
             let lastActivity = Date.now();
 
-            // Watchdog local
             const watchdog = setInterval(() => {
                 if(this.canceled) { clearInterval(watchdog); reject(new Error("Canceled")); return; }
-                if(Date.now() - lastActivity > 20000) { // 20s sem dados
-                    console.log("[RD-MANAGER] Watchdog: Conexão travada. Reiniciando...");
+                if(Date.now() - lastActivity > 20000) { 
+                    console.log("[RD-MANAGER] Watchdog: Travado. Reiniciando...");
                     clearInterval(watchdog);
-                    stream.destroy(); // Mata o stream para forçar o catch do loop
+                    stream.destroy(); 
                     reject(new Error("Timeout Watchdog"));
                 }
             }, 5000);
@@ -185,19 +180,16 @@ class DownloadManager {
                 sessionDownloaded += chunk.length;
                 lastActivity = Date.now();
                 
-                // Escreve no disco
                 if(!this.writer.write(chunk)) {
                     stream.pause();
                     this.writer.once('drain', () => stream.resume());
                 }
 
-                // UI Updates
                 const now = Date.now();
                 if (now - this.lastTime >= 1000) {
                     const speed = (sessionDownloaded - this.lastLoaded) / ((now - this.lastTime) / 1000);
                     this.lastLoaded = sessionDownloaded;
                     this.lastTime = now;
-                    
                     this.updateUI(speed);
                 }
             });
@@ -218,7 +210,6 @@ class DownloadManager {
 
     updateUI(speed) {
         this.chartData.push(speed); this.chartData.shift();
-        
         const percent = this.totalBytes > 0 ? ((this.downloadedBytes / this.totalBytes) * 100).toFixed(1) : 0;
         
         let etaFormatted = "--:--";
@@ -233,7 +224,7 @@ class DownloadManager {
             name: path.basename(this.filePath),
             progress: percent,
             speed: this.callbacks.formatBytes(speed) + '/s',
-            peers: "RD/RESUME", // Indicador visual que estamos usando o novo sistema
+            peers: "RD/RESUME",
             eta: etaFormatted,
             paused: false,
             chart: this.chartData,
@@ -248,18 +239,18 @@ class DownloadManager {
     }
 }
 
-
-// --- LÓGICA PRINCIPAL EXPORTADA ---
-
 async function handleMagnet(magnetLink, win, downloadPath, callbacks) {
     if (!rdToken) return false;
+
+    // Recupera a imagem passada nos callbacks
+    const gameImage = callbacks.gameImage || '';
 
     const choice = await dialog.showMessageBox(win, {
         type: 'question',
         buttons: ['Baixar via Real-Debrid (Alta Velocidade)', 'Baixar via Torrent (P2P Tradicional)', 'Cancelar'],
         defaultId: 0,
         title: 'Real-Debrid Detectado',
-        message: 'Você tem o Real-Debrid configurado. Como deseja baixar este jogo?',
+        message: 'Como deseja baixar este jogo?',
         detail: 'Real-Debrid usa servidores HTTP diretos. Torrent usa conexões P2P.'
     });
 
@@ -267,16 +258,14 @@ async function handleMagnet(magnetLink, win, downloadPath, callbacks) {
     if (choice.response === 1) return false; 
 
     try {
-        // UI SETUP
         win.webContents.executeJavaScript(`
             localStorage.setItem('sv-bar-collapsed', 'false');
             document.getElementById('sv-download-bar').classList.add('visible');
             document.getElementById('sv-toggle-tab').style.display = 'flex';
-            document.getElementById('sv-dl-name').innerText = "Real-Debrid: Processando Magnet...";
+            document.getElementById('sv-dl-name').innerText = "Real-Debrid: Processando...";
         `);
 
         // 1. ADD MAGNET
-        console.log("[RD] Adicionando magnet...");
         const addData = new URLSearchParams(); addData.append('magnet', magnetLink);
         const addRes = await axios.post(`${RD_API}/torrents/addMagnet`, addData, { headers: headers() });
         const torrentId = addRes.data.id;
@@ -296,7 +285,7 @@ async function handleMagnet(magnetLink, win, downloadPath, callbacks) {
         await axios.post(`${RD_API}/torrents/selectFiles/${torrentId}`, selectData, { headers: headers() });
 
         // 4. WAIT CONVERSION
-        win.webContents.executeJavaScript(`document.getElementById('sv-dl-name').innerText = "Real-Debrid: Convertendo/Baixando no Servidor...";`);
+        win.webContents.executeJavaScript(`document.getElementById('sv-dl-name').innerText = "Real-Debrid: Convertendo...";`);
         while(true) {
             const infoRes = await axios.get(`${RD_API}/torrents/info/${torrentId}`, { headers: headers() });
             info = infoRes.data;
@@ -317,7 +306,6 @@ async function handleMagnet(magnetLink, win, downloadPath, callbacks) {
             await sleep(1000);
         }
 
-        // 5. GET LINK
         const links = info.links;
         if(links.length === 0) throw new Error('Nenhum link gerado.');
         const linkToUnrestrict = links[0];
@@ -328,7 +316,7 @@ async function handleMagnet(magnetLink, win, downloadPath, callbacks) {
         const fileName = unrestrictRes.data.filename;
         const finalPath = path.join(downloadPath, fileName);
 
-        // 6. START DOWNLOAD MANAGER
+        // 5. START DOWNLOAD
         win.webContents.executeJavaScript(`document.getElementById('sv-dl-name').innerText = "Baixando: ${fileName}";`);
         
         rdActiveDownload = new DownloadManager(downloadUrl, finalPath, win, callbacks);
@@ -338,15 +326,28 @@ async function handleMagnet(magnetLink, win, downloadPath, callbacks) {
         if (success) {
             new Notification({ title: 'Steam Verde', body: 'Download Real-Debrid Concluído!' }).show();
             win.webContents.send('torrent-done');
-            callbacks.saveGameToDb(fileName, finalPath);
+            
+            // Salva no banco COM A IMAGEM
+            callbacks.saveGameToDb(fileName, finalPath, gameImage);
+            
+            // Detecta extensão para exibir botão correto
+            const ext = path.extname(fileName).toLowerCase();
+            if (ext === '.zip') {
+                 win.webContents.send('archive-ready', { path: finalPath, type: 'zip' });
+            } else if (ext === '.rar') {
+                 win.webContents.send('archive-ready', { path: finalPath, type: 'rar' });
+            } else if (ext === '.exe') {
+                 win.webContents.send('install-ready', finalPath);
+            } else {
+                 win.webContents.send('install-ready', path.dirname(finalPath));
+            }
+
             win.webContents.send('torrent-progress', {
                 name: fileName, progress: "100.0", speed: "0 B/s", peers: 0, eta: "Concluído", paused: false, chart: new Array(150).fill(0), peersChart: new Array(150).fill(0)
             });
             
-            // Tenta limpar o torrent do RD pra não encher a conta do usuário
             try { await axios.delete(`${RD_API}/torrents/delete/${torrentId}`, { headers: headers() }); } catch(e){}
         } else {
-            // Cancelado pelo usuário
             console.log("[RD] Cancelado. Limpando...");
             try { fs.unlinkSync(finalPath); } catch(e){}
         }
