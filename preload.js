@@ -1,4 +1,6 @@
+// preload.js
 const { contextBridge, ipcRenderer } = require('electron');
+const fs = require('fs'); 
 
 contextBridge.exposeInMainWorld('ipc', {
     minimize: () => ipcRenderer.send('site-minimize'),
@@ -15,11 +17,41 @@ contextBridge.exposeInMainWorld('ipc', {
     
     toggleFilesModal: () => {
         const modal = document.getElementById('sv-files-modal');
-        if(modal) {
-            if(modal.style.display === 'flex') modal.style.display = 'none';
-            else modal.style.display = 'flex';
+        if(modal) modal.style.display = (modal.style.display === 'flex') ? 'none' : 'flex';
+    },
+    
+    toggleMenu: () => {
+        const menu = document.getElementById('sv-side-menu');
+        const overlay = document.getElementById('sv-menu-overlay');
+        if(menu && overlay) {
+            menu.classList.toggle('open');
+            overlay.classList.toggle('visible');
         }
     },
+
+    openMyGames: () => {
+        const modal = document.getElementById('sv-mygames-modal');
+        if(modal) modal.style.display = 'flex';
+        ipcRenderer.send('get-my-games'); 
+        const menu = document.getElementById('sv-side-menu');
+        const overlay = document.getElementById('sv-menu-overlay');
+        if(menu) menu.classList.remove('open');
+        if(overlay) overlay.classList.remove('visible');
+    },
+
+    closeMyGames: () => {
+        const modal = document.getElementById('sv-mygames-modal');
+        if(modal) modal.style.display = 'none';
+    },
+
+    // --- NOVA FUNÇÃO DE REMOVER ---
+    removeGame: (name) => {
+        if(confirm(`Tem certeza que deseja remover "${name}" da sua lista?\nIsso não apaga os arquivos do PC, apenas o atalho.`)) {
+            ipcRenderer.send('remove-game-from-db', name);
+        }
+    },
+
+    openGameFolder: (path) => ipcRenderer.send('open-game-folder', path),
     
     toggleDownloadBar: () => {
         const bar = document.getElementById('sv-download-bar');
@@ -41,6 +73,26 @@ contextBridge.exposeInMainWorld('ipc', {
         }
     },
     
+    // FUNÇÕES DO REAL DEBRID
+    openRD: () => {
+        const menu = document.getElementById('sv-side-menu');
+        const overlay = document.getElementById('sv-menu-overlay');
+        const rdModal = document.getElementById('sv-rd-modal');
+        
+        if(menu) menu.classList.remove('open');
+        if(overlay) overlay.classList.remove('visible');
+        if(rdModal) rdModal.style.display = 'flex';
+    },
+
+    closeRD: () => {
+        const rdModal = document.getElementById('sv-rd-modal');
+        if(rdModal) rdModal.style.display = 'none';
+    },
+
+    saveRDToken: (token) => ipcRenderer.send('rd-save-token', token),
+    removeRDToken: () => ipcRenderer.send('rd-remove-token'),
+    openExternal: (url) => require('electron').shell.openExternal(url),
+    
     log: (msg) => ipcRenderer.send('console-log', msg)
 });
 
@@ -58,6 +110,65 @@ ipcRenderer.on('install-ready', (event, path) => {
     }
 });
 
+// --- RENDERIZA LISTA DE JOGOS (COM BOTÃO DELETAR) ---
+ipcRenderer.on('my-games-list', (event, games) => {
+    const list = document.getElementById('sv-mygames-list');
+    if(!list) return;
+    
+    if(games.length === 0) {
+        list.innerHTML = '<div style="text-align:center; padding:40px; color:#8f98a0">Você ainda não baixou nenhum jogo via Launcher.</div>';
+        return;
+    }
+
+    list.innerHTML = '';
+    games.forEach(game => {
+        const safeGamePath = game.path.replace(/\\/g, '/');
+        // Escapar aspas simples no nome do jogo para não quebrar o HTML
+        const safeName = game.name.replace(/'/g, "\\'"); 
+
+        let hasSetup = false;
+        let setupFile = '';
+        try {
+            if(fs.existsSync(game.path)) {
+                const files = fs.readdirSync(game.path);
+                const setup = files.find(f => f.toLowerCase().includes('setup.exe') || f.toLowerCase().includes('install.exe'));
+                if(setup) {
+                    hasSetup = true;
+                    setupFile = setup;
+                }
+            }
+        } catch(e) {}
+
+        const setupPath = hasSetup ? safeGamePath + '/' + setupFile : '';
+
+        const item = document.createElement('div');
+        item.className = 'sv-game-card';
+        item.innerHTML = `
+            <svg style="width:30px;height:30px;fill:#a4d007" viewBox="0 0 24 24"><path d="M20,6H16V4A2,2 0 0,0 14,2H10A2,2 0 0,0 8,4V6H4A2,2 0 0,0 2,8V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8A2,2 0 0,0 20,6M10,4H14V6H10V4M20,18H4V8H20V18Z"/></svg>
+            <div class="sv-game-info">
+                <div class="sv-game-title">${game.name}</div>
+                <div class="sv-game-path">${safeGamePath}</div>
+            </div>
+            <div class="sv-game-actions">
+                ${hasSetup ? `<button class="sv-btn-small btn-play" onclick="window.ipc.openGameFolder('${setupPath}')"><svg style="width:14px;height:14px;fill:#1b2838" viewBox="0 0 24 24"><path d="M8,5.14V19.14L19,12.14L8,5.14Z"/></svg> INSTALAR</button>` : ''}
+                
+                <button class="sv-btn-small btn-folder-small" onclick="window.ipc.openGameFolder('${safeGamePath}')">
+                    <svg style="width:14px;height:14px;fill:#fff" viewBox="0 0 24 24"><path d="M20,18H4V8H20M20,6H12L10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,4Z"/></svg>
+                </button>
+
+                <button class="sv-btn-small" style="background:#333; color:#ff4d4d;" title="Remover da lista" onclick="window.ipc.removeGame('${safeName}')">
+                    <svg style="width:14px;height:14px;fill:currentColor" viewBox="0 0 24 24"><path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z" /></svg>
+                </button>
+            </div>
+        `;
+        list.appendChild(item);
+    });
+});
+
+// Restante dos listeners (torrent-progress, files, etc) mantenha igual...
+// Como você já tem isso funcionando, só adicionei a parte do delete acima.
+// Vou incluir o resto aqui embaixo para garantir que o copy-paste seja completo e seguro:
+
 ipcRenderer.on('torrent-progress', (event, data) => {
     const doc = document;
     
@@ -74,7 +185,7 @@ ipcRenderer.on('torrent-progress', (event, data) => {
 
     if(doc.getElementById('sv-dl-name')) doc.getElementById('sv-dl-name').innerText = data.name;
     if(doc.getElementById('sv-dl-bar')) doc.getElementById('sv-dl-bar').style.width = data.progress + '%';
-    if(doc.getElementById('sv-dl-peers')) doc.getElementById('sv-dl-peers').innerText = data.peers + ' Peers';
+    if(doc.getElementById('sv-dl-peers')) doc.getElementById('sv-dl-peers').innerText = data.peers + (data.peers === "RD HTTP" || data.peers === "RD/RESUME" ? "" : " Peers");
     if(doc.getElementById('sv-dl-eta')) doc.getElementById('sv-dl-eta').innerText = data.eta;
     if(doc.getElementById('sv-dl-perc')) doc.getElementById('sv-dl-perc').innerText = data.progress + '%';
 
@@ -125,9 +236,9 @@ ipcRenderer.on('torrent-progress', (event, data) => {
         ctx.closePath();
         
         const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-        gradient.addColorStop(0, "rgba(164, 208, 7, 0.4)");   
+        gradient.addColorStop(0, "rgba(164, 208, 7, 0.4)");    
         gradient.addColorStop(0.5, "rgba(164, 208, 7, 0.1)"); 
-        gradient.addColorStop(1, "rgba(23, 26, 33, 0)");      
+        gradient.addColorStop(1, "rgba(23, 26, 33, 0)");       
         ctx.fillStyle = gradient;
         ctx.fill();
         ctx.lineWidth = 2;
@@ -184,5 +295,4 @@ ipcRenderer.on('torrent-files', (event, files) => {
 ipcRenderer.on('torrent-done', () => {
     const bar = document.getElementById('sv-dl-bar');
     if(bar) bar.style.borderTop = '1px solid #43b581';
-    alert("Download Concluído! Seus arquivos estão na pasta Downloads.");
 });

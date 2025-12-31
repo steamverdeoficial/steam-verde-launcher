@@ -1,6 +1,6 @@
 {
   "name": "steam-verde-launcher",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Launcher Exclusivo Steam Verde",
   "main": "main.js",
   "repository": {
@@ -46,6 +46,7 @@
     "electron-builder": "^26.0.12"
   },
   "dependencies": {
+    "axios": "^1.13.2",
     "discord-rpc": "^4.0.1",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.6.2",

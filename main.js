@@ -1,3 +1,4 @@
+// main.js
 const { app, BrowserWindow, ipcMain, session, shell, dialog, Notification } = require('electron'); 
 const path = require('path'); 
 const fs = require('fs');  
@@ -6,14 +7,26 @@ const { autoUpdater } = require('electron-updater');
 const log = require('electron-log'); 
 const WebTorrent = require('webtorrent'); 
 
+// --- MÓDULOS SEPARADOS ---
+const Styles = require('./src/styles');
+const Scripts = require('./src/scripts');
+const RD = require('./src/realdebrid');
+
 // --- CONFIGURAÇÃO ---
 const torrentClient = new WebTorrent();
 let currentTorrent = null;
 let downloadPath = app.getPath('downloads'); 
 // DADOS PARA OS GRÁFICOS
-let chartData = new Array(150).fill(0); // Velocidade
-let peersData = new Array(150).fill(0); // Peers 
+let chartData = new Array(150).fill(0); 
+let peersData = new Array(150).fill(0); 
 let isPausedManual = false; 
+
+// Inicializa RD Token
+RD.loadToken();
+
+// DATABASE LOCAL
+const gamesDbPath = path.join(app.getPath('userData'), 'games.json');
+if (!fs.existsSync(gamesDbPath)) { fs.writeFileSync(gamesDbPath, JSON.stringify([])); }
 
 // TRACKERS
 const AGGRESSIVE_TRACKERS = [
@@ -59,345 +72,17 @@ function formatBytes(bytes, decimals = 2) {
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
-const TITLE_BAR_CSS = ` 
-  html { padding-top: 0px !important; height: 100vh; box-sizing: border-box; } 
-  body { margin-top: 0 !important; } 
-  header, .site-header, #masthead, .elementor-location-header, .elementor-section-fixed, .elementor-sticky--active { top: 32px !important; } 
-  .rt-slider-progress-bar, .rt-slider-progress {top: 32px !important; }
-  #wpadminbar { top: 32px !important; } 
-  #sv-custom-titlebar { position: fixed; top: 0; left: 0; width: 100%; height: 32px; background: #171a21; color: #c7d5e0; z-index: 2147483647; display: flex; justify-content: space-between; align-items: center; font-family: 'Segoe UI', sans-serif; user-select: none; -webkit-app-region: drag; box-shadow: 0 2px 5px rgba(0,0,0,0.5); box-sizing: border-box; } 
-  .sv-left-area { display: flex; align-items: center; height: 100%; overflow: hidden; padding-left: 10px; flex-shrink: 0; } 
-  .sv-app-icon { height: 18px; width: 18px; margin-right: 10px; pointer-events: none; -webkit-user-drag: none; } 
-  .sv-bar-logo { font-size: 12px; font-weight: bold; letter-spacing: 1px; color: #8f98a0; white-space: nowrap; } 
-  .sv-bar-controls { display: flex; height: 100%; -webkit-app-region: no-drag; align-items: center; } 
-  .sv-version-tag { font-size: 11px; color: #576574; margin-right: 10px; cursor: default; opacity: 0.8; }
-  #sv-update-btn { display: none; color: #43b581; cursor: pointer; margin-right: 15px; background: transparent; border: none; align-items: center; height: 100%; animation: sv-pulse 2s infinite; } 
-  #sv-update-btn:hover { color: #a4d007; } 
-  @keyframes sv-pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } } 
-  .sv-user-menu { position: relative; display: flex; align-items: center; cursor: pointer; padding: 0 15px; height: 100%; transition: 0.2s; border-left: 1px solid #282c34; } 
-  .sv-user-menu:hover { background: #323f55; color: white; } 
-  .sv-user-name { font-size: 12px; font-weight: 600; margin-right: 8px; color: #a4d007; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } 
-  .sv-arrow { font-size: 8px; } 
-  #sv-logout-dropdown { position: absolute; top: 32px; right: 0; background: #323f55; width: 150px; display: none; flex-direction: column; box-shadow: 0 5px 15px rgba(0,0,0,0.5); border-bottom-left-radius: 4px; } 
-  #sv-logout-dropdown.show { display: flex; } 
-  .sv-logout-item { padding: 12px 15px; font-size: 12px; cursor: pointer; color: #c7d5e0; text-decoration: none; } 
-  .sv-logout-item:hover { background: #c21a1a; color: white; } 
-  .sv-win-btn { width: 45px; height: 100%; border: none; background: transparent; color: #8f98a0; cursor: pointer; display: flex; justify-content: center; align-items: center; transition: background 0.2s; padding: 0; } 
-  .sv-win-btn svg { width: 10px; height: 10px; fill: currentColor; } 
-  .sv-win-btn:not(.sv-close-btn):hover { background: #323f55; color: white; } 
-  #sv-custom-titlebar .sv-bar-controls .sv-close-btn:hover { background: #a4d007 !important; color: #171a21 !important; } 
-`; 
-
-const CUSTOM_UI_CSS = `
-  .adsbygoogle, .ad-container, .advertising, .anuncio, 
-  div[id^="google_ads"], iframe[src*="google"], .admaven-banner, .pop-under {
-      position: absolute !important; left: -9999px !important; visibility: hidden !important;
-  }
-
-  /* BOTÃO FLUTUANTE */
-  #sv-float-dl-btn {
-      position: fixed; bottom: 25px; right: 100px;
-      background: linear-gradient(90deg, #a4d007 0%, #46bd14 100%);
-      color: #fff; padding: 14px 28px; border-radius: 40px;
-      font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 14px;
-      box-shadow: 0 0 20px rgba(164, 208, 7, 0.4);
-      cursor: pointer; z-index: 2147483647 !important;
-      display: none; align-items: center; gap: 12px; 
-      transition: bottom 0.5s cubic-bezier(0.22, 1, 0.36, 1), transform 0.2s ease, box-shadow 0.2s ease;
-      border: 2px solid rgba(255,255,255,0.1); letter-spacing: 0.5px;
-  }
-  
-  #sv-float-dl-btn.pushed-up { bottom: 140px !important; }
-  #sv-float-dl-btn:hover { transform: scale(1.05) translateY(-2px); box-shadow: 0 10px 30px rgba(164, 208, 7, 0.6); background: #b8e60d; }
-  
-  #sv-float-dl-btn.install-mode {
-      background: linear-gradient(90deg, #6a11cb 0%, #2575fc 100%) !important;
-      box-shadow: 0 0 20px rgba(106, 17, 203, 0.5) !important;
-  }
-  #sv-float-dl-btn.install-mode:hover { background: #7b2dd6 !important; }
-  #sv-float-dl-btn svg { width: 24px; height: 24px; fill: white; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3)); }
-
-  /* BOTÃO TOGGLE */
-  #sv-toggle-tab {
-      position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
-      width: 60px; height: 20px;
-      background: #0f1115;
-      border-top-left-radius: 10px; border-top-right-radius: 10px;
-      border: 1px solid #a4d007; border-bottom: none;
-      z-index: 2147483648; 
-      cursor: pointer; display: none; 
-      justify-content: center; align-items: center;
-      box-shadow: 0 -5px 15px rgba(0,0,0,0.5);
-      transition: bottom 0.5s cubic-bezier(0.22, 1, 0.36, 1);
-  }
-  #sv-toggle-tab.raised { bottom: 110px; } 
-  #sv-toggle-tab:hover { background: #a4d007; }
-  #sv-toggle-tab svg { width: 20px; height: 20px; fill: #fff; transition: transform 0.3s; }
-  #sv-toggle-tab.rotated svg { transform: rotate(180deg); }
-
-  /* BARRA PRINCIPAL */
-  #sv-download-bar {
-      position: fixed; bottom: -140px; left: 0; width: 100%; height: 110px;
-      background: #0f1115; border-top: 1px solid #a4d007;
-      z-index: 2147483647 !important; 
-      display: flex; align-items: center;
-      transition: bottom 0.5s cubic-bezier(0.22, 1, 0.36, 1);
-      padding: 0; box-shadow: 0 -10px 50px rgba(0,0,0,1);
-      overflow: hidden; 
-  }
-  #sv-download-bar.visible { bottom: 0; }
-
-  /* LEGENDA - AGORA FORA DO CONTEÚDO PARA BRILHAR */
-  #sv-dl-legend {
-      position: absolute; 
-      top: 5px; /* MAIS ALTO */
-      right: 30px;
-      display: flex; gap: 20px; 
-      z-index: 2147483647 !important; /* ACIMA DE TUDO */
-      pointer-events: none;
-      font-family: 'Segoe UI', sans-serif; font-size: 11px; font-weight: 700;
-  }
-  .sv-legend-item { 
-      display: flex; align-items: center; gap: 8px; 
-      color: #ffffff !important; 
-      opacity: 1 !important; 
-      text-shadow: 0 0 4px #000, 0 0 2px #000; /* CONTORNO PRETO PARA LEGIBILIDADE */
-      letter-spacing: 0.5px;
-  }
-  .sv-legend-line { width: 18px; height: 4px; border-radius: 2px; display:block; box-shadow: 0 0 5px rgba(0,0,0,0.5); }
-
-  #sv-dl-graph-wrapper { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
-  #sv-dl-canvas { width: 100%; height: 100%; display: block; }
-
-  .sv-dl-content { position: relative; z-index: 2; display: flex; width: 100%; height: 100%; align-items: center; padding: 0 30px; background: linear-gradient(90deg, rgba(15,17,21,0.95) 0%, rgba(15,17,21,0.7) 40%, rgba(15,17,21,0.7) 60%, rgba(15,17,21,0.95) 100%); }
-  .sv-dl-info { display: flex; flex-direction: column; flex: 1; margin-right: 40px; justify-content: center; }
-  .sv-dl-title { color: #fff; font-size: 15px; font-weight: 700; margin-bottom: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 2px 4px rgba(0,0,0,0.8); display: flex; align-items: center; gap: 10px; }
-  .sv-dl-progress-bg { width: 100%; height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; overflow: hidden; position: relative; margin-bottom: 10px; }
-  .sv-dl-progress-bar { height: 100%; background: linear-gradient(90deg, #a4d007, #d4ff33); width: 0%; transition: width 0.3s ease; box-shadow: 0 0 15px rgba(164,208,7,0.6); }
-  .sv-dl-stats { display: flex; gap: 25px; align-items: center; color: #ccc; font-size: 12px; font-family: 'Segoe UI', monospace; font-weight: 500; }
-  .sv-stat-item { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.3); padding: 4px 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.05); }
-  .sv-stat-icon { width: 16px; height: 16px; fill: #a4d007; }
-  .sv-stat-val { color: #fff; font-weight: bold; }
-  .sv-dl-controls { display: flex; gap: 15px; align-items: center; z-index: 10; pointer-events: auto; }
-  .sv-btn-icon { border: none; width: 48px; height: 48px; border-radius: 12px; cursor: pointer; display: flex; justify-content: center; align-items: center; transition: all 0.2s; background: rgba(40, 44, 52, 0.8); color: #fff; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
-  .sv-btn-icon:hover { transform: translateY(-3px) scale(1.05); box-shadow: 0 8px 20px rgba(0,0,0,0.5); }
-  .sv-btn-icon svg { width: 28px; height: 28px; fill: currentColor; }
-  .btn-files:hover { background: #fff; color: #1b2838; } .btn-pause:hover { background: #ffcc00; color: #000; } .btn-folder:hover { background: #00d9ff; color: #000; } .btn-stop:hover { background: #ff4d4d; color: #fff; }
-  .sv-prio-btn.active { color: #ffcc00 !important; filter: drop-shadow(0 0 5px rgba(255, 204, 0, 0.8)); transform: scale(1.1); }
-  
-  #sv-files-modal { 
-      position: fixed; bottom: 120px; right: 30px; 
-      width: 500px; max-height: 400px; 
-      background: #1b2838; border: 1px solid #46bd14; border-radius: 10px; 
-      display: none; flex-direction: column; 
-      z-index: 2147483647 !important; 
-      box-shadow: 0 20px 50px rgba(0,0,0,1);
-      overflow: hidden; 
-  }
-  .sv-modal-body {
-      overflow-y: auto;
-      flex: 1;
-      max-height: 340px; 
-  }
-  .sv-modal-body::-webkit-scrollbar { width: 8px; }
-  .sv-modal-body::-webkit-scrollbar-track { background: #171a21; }
-  .sv-modal-body::-webkit-scrollbar-thumb { background: #323f55; border-radius: 4px; }
-  .sv-modal-body::-webkit-scrollbar-thumb:hover { background: #a4d007; }
-`;
-
-const LOADING_CSS = ` 
-  #sv-launcher-loader { position: fixed; top: 32px; left: 0; width: 100%; height: calc(100% - 32px); background-color: rgba(27, 40, 56, 0.85); z-index: 2147483646; display: flex; justify-content: center; align-items: center; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; display: none; } 
-  #sv-launcher-loader.visible { opacity: 1; display: flex !important; pointer-events: auto; } 
-  .sv-spinner { width: 50px; height: 50px; border: 4px solid rgba(255, 255, 255, 0.1); border-radius: 50%; border-top-color: #a4d007; animation: sv-spin 0.8s linear infinite; } 
-  @keyframes sv-spin { to { transform: rotate(360deg); } } 
-`; 
-
-const INJECT_LOADER_DOM = `if (!document.getElementById('sv-launcher-loader')) { const loader = document.createElement('div'); loader.id = 'sv-launcher-loader'; loader.innerHTML = '<div class="sv-spinner"></div>'; document.body.appendChild(loader); }`; 
-const CLICK_LISTENER_SCRIPT = ` 
-  document.body.addEventListener('click', (e) => { 
-    const link = e.target.closest('a'); 
-    if (link && link.href) { 
-        if (link.href.startsWith('magnet:') || link.href.endsWith('.torrent')) {
-             e.preventDefault(); e.stopPropagation();
-             window.ipc.startTorrent(link.href);
-             return;
+// FUNÇÃO SAVE DB
+function saveGameToDb(name, path) {
+    try {
+        const data = fs.readFileSync(gamesDbPath);
+        const games = JSON.parse(data);
+        if (!games.find(g => g.name === name)) {
+            games.push({ name: name, path: path, date: new Date().toISOString() });
+            fs.writeFileSync(gamesDbPath, JSON.stringify(games));
         }
-        if (link.href.includes('#') || link.href.startsWith('javascript:') || link.href === window.location.href) return; 
-        if (!link.href.includes('steamverde.net')) return; 
-        const loader = document.getElementById('sv-launcher-loader'); 
-        if (loader) { 
-            loader.classList.add('visible'); 
-            setTimeout(() => { loader.classList.remove('visible'); }, 3000); 
-        } 
-    } 
-  }); 
-`; 
-const HIDE_LOADER_SCRIPT = `(function() { const loader = document.getElementById('sv-launcher-loader'); if (loader) { loader.classList.remove('visible'); setTimeout(() => { loader.style.display = 'none'; }, 200); } })();`; 
-const SHOW_UPDATE_BTN_SCRIPT = `const btn = document.getElementById('sv-update-btn'); if(btn) btn.style.display = 'flex';`; 
-
-// --- INJEÇÃO UI ---
-const INJECT_UI_SCRIPT = `
-    if (!document.getElementById('sv-float-dl-btn')) {
-        const btn = document.createElement('div');
-        btn.id = 'sv-float-dl-btn';
-        btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z" /></svg> DOWNLOAD VIA LAUNCHER';
-        btn.onclick = function() {
-            const mag = document.querySelector('a[href^="magnet:"]');
-            if(mag) window.ipc.startTorrent(mag.href);
-        };
-        document.body.appendChild(btn);
-    }
-
-    if (!document.getElementById('sv-download-bar')) {
-        const bar = document.createElement('div');
-        bar.id = 'sv-download-bar';
-        // A LEGENDA FOI MOVIDA PARA O FINAL DO CONTAINER (Z-INDEX SUPERIOR)
-        bar.innerHTML = \`
-            <div id="sv-dl-graph-wrapper"><canvas id="sv-dl-canvas"></canvas></div>
-            <div class="sv-dl-content">
-                <div class="sv-dl-info">
-                    <div class="sv-dl-title">
-                        <svg style="width:20px;height:20px;fill:#a4d007" viewBox="0 0 24 24"><path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M11,16.5L18,9.5L16.59,8.09L11,13.67L7.91,10.59L6.5,12L11,16.5Z" /></svg>
-                        <span id="sv-dl-name">Conectando aos Trackers...</span>
-                    </div>
-                    <div class="sv-dl-progress-bg">
-                        <div class="sv-dl-progress-bar" id="sv-dl-bar"></div>
-                    </div>
-                    <div class="sv-dl-stats">
-                        <div class="sv-stat-item">
-                            <svg class="sv-stat-icon" viewBox="0 0 24 24"><path d="M13,2.05L13,2.05L13,2.05L13,2.05L7,14H12V22L18,10H13V2.05Z" /></svg>
-                            <span id="sv-dl-speed" class="sv-stat-val">0 KB/s</span>
-                        </div>
-                        <div class="sv-stat-item">
-                            <svg class="sv-stat-icon" viewBox="0 0 24 24"><path d="M12,5.5A3.5,3.5 0 0,1 15.5,9A3.5,3.5 0 0,1 12,12.5A3.5,3.5 0 0,1 8.5,9A3.5,3.5 0 0,1 12,5.5M5,8C5.56,8 6.08,8.15 6.53,8.42C6.38,9.85 6.8,11.27 7.66,12.38C7.16,13.34 6.16,14 5,14A3,3 0 0,1 2,11A3,3 0 0,1 5,8M19,8A3,3 0 0,1 22,11A3,3 0 0,1 19,14C17.84,14 16.84,13.34 16.34,12.38C17.2,11.27 17.62,9.85 17.47,8.42C17.92,8.15 18.44,8 19,8M5.5,18.25C5.5,16.18 8.41,14.5 12,14.5C15.59,14.5 18.5,16.18 18.5,18.25V20H5.5V18.25M0,20V18.5C0,17.11 1.89,15.94 4.45,15.6C3.86,16.28 3.5,17.22 3.5,18.25V20H0M24,20H20.5V18.25C20.5,17.22 20.14,16.28 19.55,15.6C22.11,15.94 24,17.11 24,18.5V20Z" /></svg>
-                            <span id="sv-dl-peers" class="sv-stat-val">0 Peers</span>
-                        </div>
-                        <div class="sv-stat-item">
-                            <svg class="sv-stat-icon" viewBox="0 0 24 24"><path d="M12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12.5,7V12.25L17,14.92L16.25,16.15L11,13V7H12.5Z" /></svg>
-                            <span id="sv-dl-eta" class="sv-stat-val">--:--</span>
-                        </div>
-                        <span id="sv-dl-perc" style="margin-left:auto; font-size:18px; font-weight:900; color:#a4d007; text-shadow:0 0 10px rgba(164,208,7,0.5)">0%</span>
-                    </div>
-                </div>
-                <div class="sv-dl-controls">
-                    <button class="sv-btn-icon btn-files" onclick="window.ipc.toggleFilesModal()" title="Arquivos">
-                        <svg viewBox="0 0 24 24"><path d="M13,9H18.5L13,3.5V9M6,2H14L20,8V20A2,2 0 0,1 18,22H6C4.89,22 4,21.1 4,20V4C4,2.89 4.89,2 6,2M15,18V13H11V18H15Z" /></svg>
-                    </button>
-                    <button class="sv-btn-icon btn-pause" onclick="window.ipc.pauseTorrent()" title="Pausar / Continuar" id="sv-btn-pause">
-                        <svg id="icon-pause" viewBox="0 0 24 24"><path d="M14,19H18V5H14M6,19H10V5H6V19Z" /></svg>
-                        <svg id="icon-play" style="display:none" viewBox="0 0 24 24"><path d="M8,5.14V19.14L19,12.14L8,5.14Z" /></svg>
-                    </button>
-                    <button class="sv-btn-icon btn-folder" onclick="window.ipc.openFolder()" title="Pasta Destino">
-                        <svg viewBox="0 0 24 24"><path d="M20,18H4V8H20M20,6H12L10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,4Z" /></svg>
-                    </button>
-                    <button class="sv-btn-icon btn-stop" onclick="window.ipc.stopTorrent()" title="Cancelar e Excluir">
-                         <svg viewBox="0 0 24 24"><path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" /></svg>
-                    </button>
-                </div>
-            </div>
-            
-            <div id="sv-dl-legend">
-                <div class="sv-legend-item"><div class="sv-legend-line" style="background:#a4d007;box-shadow:0 0 5px #a4d007"></div>Velocidade</div>
-                <div class="sv-legend-item"><div class="sv-legend-line" style="background:#00d9ff;box-shadow:0 0 5px #00d9ff"></div>Conexões</div>
-            </div>
-        \`;
-        document.body.appendChild(bar);
-        window.dlCanvas = document.getElementById('sv-dl-canvas');
-        window.dlCtx = window.dlCanvas.getContext('2d');
-    }
-
-    if (!document.getElementById('sv-toggle-tab')) {
-        const tab = document.createElement('div');
-        tab.id = 'sv-toggle-tab';
-        tab.innerHTML = '<svg viewBox="0 0 24 24"><path d="M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z" /></svg>';
-        tab.onclick = function() {
-            window.ipc.toggleDownloadBar();
-        };
-        document.body.appendChild(tab);
-    }
-
-    if (!document.getElementById('sv-files-modal')) {
-        const modal = document.createElement('div');
-        modal.id = 'sv-files-modal';
-        modal.innerHTML = \`
-            <div class="sv-modal-header" style="color:#fff; padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between">
-                <span style="font-weight:bold">GERENCIADOR DE ARQUIVOS</span>
-                <span style="cursor:pointer; font-weight:bold; color:#ff4d4d" onclick="window.ipc.toggleFilesModal()">FECHAR (X)</span>
-            </div>
-            <div class="sv-modal-body" id="sv-files-list"></div>
-        \`;
-        document.body.appendChild(modal);
-    }
-
-    function checkUI() {
-        const mag = document.querySelector('a[href^="magnet:"]');
-        const btn = document.getElementById('sv-float-dl-btn');
-        const bar = document.getElementById('sv-download-bar');
-        const tab = document.getElementById('sv-toggle-tab');
-
-        if(btn) {
-            if(btn.classList.contains('install-mode')) {
-                btn.style.display = 'flex';
-            } else {
-                const shouldShow = mag ? 'flex' : 'none';
-                if(btn.style.display !== shouldShow) btn.style.display = shouldShow;
-            }
-            
-            if(bar && bar.classList.contains('visible')) {
-                if(!btn.classList.contains('pushed-up')) btn.classList.add('pushed-up');
-                if(!tab.classList.contains('raised')) tab.classList.add('raised');
-                if(!tab.classList.contains('rotated')) tab.classList.add('rotated'); 
-            } else {
-                if(btn.classList.contains('pushed-up')) btn.classList.remove('pushed-up');
-                if(tab.classList.contains('raised')) tab.classList.remove('raised');
-                if(tab.classList.contains('rotated')) tab.classList.remove('rotated');
-            }
-        }
-    }
-    setInterval(checkUI, 500);
-`;
-
-const INJECT_TITLEBAR_SCRIPT = (userName, iconBase64, appVersion) => ` 
-  if (!document.getElementById('sv-custom-titlebar')) { 
-    const bar = document.createElement('div'); 
-    bar.id = 'sv-custom-titlebar'; 
-    bar.innerHTML = \` 
-      <div class="sv-left-area"> 
-          <img src="${iconBase64}" class="sv-app-icon"> 
-          <div class="sv-bar-logo" id="sv-app-title">STEAM VERDE</div> 
-      </div> 
-      <div class="sv-bar-controls"> 
-        <span class="sv-version-tag">v${appVersion} [Aziris][-BETA-]</span> 
-        <button id="sv-update-btn" title="Atualizar" onclick="window.ipc.restartAndUpdate()"> 
-            <svg style="width:16px;height:16px;fill:currentColor" viewBox="0 0 24 24"><path d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z" /></svg> 
-        </button> 
-        <div class="sv-user-menu" onclick="toggleSvDropdown()"> 
-            <span class="sv-user-name">${userName}</span> 
-            <span class="sv-arrow">▼</span> 
-            <div id="sv-logout-dropdown"> 
-                <div class="sv-logout-item" onclick="confirmLogout()">Sair da conta</div> 
-            </div> 
-        </div> 
-        <button class="sv-win-btn" onclick="window.ipc.minimize()" title="Minimizar"><svg viewBox="0 0 10 1"><path d="M0 0h10v1H0z"/></svg></button> 
-        <button class="sv-win-btn" onclick="window.ipc.maximize()" title="Maximizar"><svg viewBox="0 0 10 10"><path d="M0 0h10v10H0V0zm1 1v8h8V1H1z"/></svg></button> 
-        <button class="sv-win-btn sv-close-btn" onclick="window.ipc.close()" title="Fechar"><svg viewBox="0 0 10 10"><path d="M10 1L9 0 5 4 1 0 0 1l4 4-4 4 1 1 4-4 4 4 1-1-4-4z"/></svg></button> 
-      </div> 
-    \`; 
-    document.body.prepend(bar); 
-    const updateTitle = () => { 
-        const titleEl = document.getElementById('sv-app-title'); 
-        if(titleEl && document.title) { 
-             let clean = document.title.replace(' - Steam Verde', '').replace(' | Steam Verde', ''); 
-             titleEl.innerText = clean + ' | STEAM VERDE';  
-        } 
-    }; 
-    updateTitle(); 
-    new MutationObserver(updateTitle).observe(document.querySelector('title'), { childList: true, subtree: true }); 
-    window.toggleSvDropdown = function() { document.getElementById('sv-logout-dropdown').classList.toggle('show'); }; 
-    window.confirmLogout = function() { if(confirm("Tem certeza que deseja sair da sua conta?")) { window.ipc.logout(); } }; 
-    document.addEventListener('click', function(e) { if (!e.target.closest('.sv-user-menu')) { document.getElementById('sv-logout-dropdown').classList.remove('show'); } }); 
-  } 
-`;
+    } catch (e) { console.error(e); }
+}
 
 function updateSplashStatus(text, percent = null) { 
     if (loadingWindow && !loadingWindow.isDestroyed()) { 
@@ -473,33 +158,34 @@ function createSiteWindow(targetUrl) {
 
   siteWindow.webContents.on('dom-ready', async () => { 
     try { 
-        await siteWindow.webContents.insertCSS(TITLE_BAR_CSS); 
-        await siteWindow.webContents.insertCSS(LOADING_CSS); 
-        await siteWindow.webContents.insertCSS(CUSTOM_UI_CSS); 
+        // --- AQUI USAMOS OS MÓDULOS IMPORTADOS ---
+        await siteWindow.webContents.insertCSS(Styles.TITLE_BAR_CSS); 
+        await siteWindow.webContents.insertCSS(Styles.LOADING_CSS); 
+        await siteWindow.webContents.insertCSS(Styles.CUSTOM_UI_CSS); 
 
         const iconBase64 = getIconBase64(); 
-        await siteWindow.webContents.executeJavaScript(INJECT_TITLEBAR_SCRIPT(currentUser.name, iconBase64, app.getVersion())); 
-        await siteWindow.webContents.executeJavaScript(INJECT_UI_SCRIPT); 
-        await siteWindow.webContents.executeJavaScript(INJECT_LOADER_DOM); 
-        await siteWindow.webContents.executeJavaScript(CLICK_LISTENER_SCRIPT); 
-        await siteWindow.webContents.executeJavaScript(HIDE_LOADER_SCRIPT); 
+        await siteWindow.webContents.executeJavaScript(Scripts.INJECT_TITLEBAR_SCRIPT(currentUser.name, iconBase64, app.getVersion())); 
+        await siteWindow.webContents.executeJavaScript(Scripts.INJECT_UI_SCRIPT); 
+        await siteWindow.webContents.executeJavaScript(Scripts.INJECT_LOADER_DOM); 
+        await siteWindow.webContents.executeJavaScript(Scripts.CLICK_LISTENER_SCRIPT); 
+        await siteWindow.webContents.executeJavaScript(Scripts.HIDE_LOADER_SCRIPT); 
     } catch (e) { console.log(e); } 
   }); 
 
-  siteWindow.webContents.on('did-stop-loading', () => { siteWindow.webContents.executeJavaScript(HIDE_LOADER_SCRIPT).catch(() => {}); }); 
-  siteWindow.webContents.on('did-fail-load', () => { siteWindow.webContents.executeJavaScript(HIDE_LOADER_SCRIPT).catch(() => {}); }); 
+  siteWindow.webContents.on('did-stop-loading', () => { siteWindow.webContents.executeJavaScript(Scripts.HIDE_LOADER_SCRIPT).catch(() => {}); }); 
+  siteWindow.webContents.on('did-fail-load', () => { siteWindow.webContents.executeJavaScript(Scripts.HIDE_LOADER_SCRIPT).catch(() => {}); }); 
    
   siteWindow.webContents.on('will-navigate', (event, url) => {  
       if (url.startsWith('magnet:') || url.endsWith('.torrent')) {  
           event.preventDefault(); 
           startTorrentDownload(url);
-          siteWindow.webContents.executeJavaScript(HIDE_LOADER_SCRIPT).catch(() => {});  
+          siteWindow.webContents.executeJavaScript(Scripts.HIDE_LOADER_SCRIPT).catch(() => {});  
       }  
   }); 
   siteWindow.webContents.setWindowOpenHandler(({ url }) => {  
       if (url.startsWith('magnet:') || url.endsWith('.torrent')) {  
           startTorrentDownload(url);
-          siteWindow.webContents.executeJavaScript(HIDE_LOADER_SCRIPT).catch(() => {});  
+          siteWindow.webContents.executeJavaScript(Scripts.HIDE_LOADER_SCRIPT).catch(() => {});  
           return { action: 'deny' };  
       }  
       if (url.startsWith('http') && !url.includes('steamverde.net')) { shell.openExternal(url); return { action: 'deny' }; }  
@@ -515,16 +201,28 @@ function setupNetworkInterception(sess) {
     }); 
 } 
 
-function startTorrentDownload(magnetLink) {
+async function startTorrentDownload(magnetLink) {
     if (currentTorrent) {
         dialog.showMessageBox(siteWindow, { type: 'info', title: 'Fila Cheia', message: 'Já existe um download em andamento.' });
         return;
     }
 
+    // --- INTERCEPTAÇÃO REAL DEBRID ---
+    // Se o RD assumir, ele retorna true e a gente para por aqui.
+    // Passamos helpers para o módulo
+    const rdHandled = await RD.handleMagnet(magnetLink, siteWindow, downloadPath, {
+        saveGameToDb,
+        formatBytes
+    });
+
+    if(rdHandled) return; // RD assumiu ou usuário cancelou
+
+    // --- FLUXO TORRENT PADRÃO (SE NÃO FOR RD) ---
     siteWindow.webContents.executeJavaScript(`
         localStorage.setItem('sv-bar-collapsed', 'false');
         document.getElementById('sv-download-bar').classList.add('visible');
         document.getElementById('sv-toggle-tab').style.display = 'flex';
+        document.getElementById('sv-dl-name').innerText = "Conectando aos Trackers...";
     `);
 
     isPausedManual = false; 
@@ -605,6 +303,8 @@ function startTorrentDownload(magnetLink) {
             }
 
             const fullPath = path.join(downloadPath, torrent.name);
+            saveGameToDb(torrent.name, fullPath); // SALVA
+
             fs.readdir(fullPath, (err, files) => {
                 if(!err && files) {
                     const setup = files.find(f => f.toLowerCase().includes('setup.exe')) 
@@ -642,6 +342,17 @@ ipcMain.on('torrent-pause', () => {
 });
 
 ipcMain.on('torrent-stop', () => {
+    // 1. Tenta cancelar RD
+    if(RD.cancelDownload()) {
+         chartData.fill(0); peersData.fill(0);
+         if(siteWindow) siteWindow.webContents.executeJavaScript(`
+            document.getElementById('sv-download-bar').classList.remove('visible');
+            document.getElementById('sv-toggle-tab').style.display = 'none';
+         `);
+         return;
+    }
+
+    // 2. Cancela Torrent Normal
     if(currentTorrent) {
         const fullPath = path.join(currentTorrent.path, currentTorrent.name);
         currentTorrent.destroy({ force: true }, () => {
@@ -673,6 +384,50 @@ ipcMain.on('torrent-open-folder', () => shell.openPath(downloadPath));
 ipcMain.on('console-log', (event, msg) => console.log("[RENDERER]", msg));
 ipcMain.on('start-torrent-download', (event, url) => startTorrentDownload(url));
 
+// IPCs MENU
+ipcMain.on('get-my-games', (event) => {
+    try {
+        const data = fs.readFileSync(gamesDbPath);
+        const games = JSON.parse(data);
+        event.reply('my-games-list', games);
+    } catch (e) { event.reply('my-games-list', []); }
+});
+
+ipcMain.on('remove-game-from-db', (event, gameName) => {
+    try {
+        if (fs.existsSync(gamesDbPath)) {
+            const data = JSON.parse(fs.readFileSync(gamesDbPath));
+            // Filtra removendo o jogo que tem o nome igual
+            const newGames = data.filter(g => g.name !== gameName);
+            fs.writeFileSync(gamesDbPath, JSON.stringify(newGames));
+            
+            // Atualiza a lista na hora para o usuário ver sumindo
+            event.reply('my-games-list', newGames);
+        }
+    } catch (e) { console.error(e); }
+});
+
+ipcMain.on('open-game-folder', (event, folderPath) => {
+    shell.openPath(folderPath);
+});
+
+// --- IPCs REAL DEBRID ---
+ipcMain.on('rd-save-token', (e, token) => {
+    RD.saveToken(token);
+    // Tenta validar e dar feedback visual
+    RD.getUserInfo().then(info => {
+        if(info) {
+             new Notification({title: "Real-Debrid", body: `Conectado como ${info.username}`}).show();
+             siteWindow.webContents.executeJavaScript(`document.getElementById('rd-status').innerText = "Conectado: ${info.username} (Premium)"; document.getElementById('rd-status').style.color="#a4d007";`);
+        } else {
+             new Notification({title: "Real-Debrid", body: `Token Inválido`}).show();
+             siteWindow.webContents.executeJavaScript(`document.getElementById('rd-status').innerText = "Erro: Token Inválido"; document.getElementById('rd-status').style.color="red";`);
+        }
+    });
+});
+ipcMain.on('rd-remove-token', () => RD.removeToken());
+
+
 const client = torrentClient;
 
 app.whenReady().then(() => { 
@@ -692,7 +447,7 @@ app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(
 autoUpdater.on('update-not-available', () => { if (!siteWindow && !loginWindow) checkLoginAndStart(); }); 
 autoUpdater.on('error', () => { if (!siteWindow && !loginWindow) checkLoginAndStart(); }); 
 autoUpdater.on('download-progress', (p) => { if (loadingWindow) updateSplashStatus('Baixando: ' + Math.round(p.percent) + '%', Math.round(p.percent)); }); 
-autoUpdater.on('update-downloaded', () => { if (loadingWindow) autoUpdater.quitAndInstall(); else if (siteWindow) siteWindow.webContents.executeJavaScript(SHOW_UPDATE_BTN_SCRIPT).catch(() => {}); }); 
+autoUpdater.on('update-downloaded', () => { if (loadingWindow) autoUpdater.quitAndInstall(); else if (siteWindow) siteWindow.webContents.executeJavaScript(Scripts.SHOW_UPDATE_BTN_SCRIPT).catch(() => {}); }); 
 
 async function checkLoginAndStart() { 
     updateSplashStatus('Iniciando...'); 
