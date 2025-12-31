@@ -25,8 +25,11 @@ Diferente de acessar pelo navegador comum, o Launcher oferece um ambiente contro
 | Recurso | Descrição |
 | :--- | :--- |
 | **🚫 Zero Anúncios** | Graças ao nosso sistema de injeção inteligente, **todas** as propagandas, banners e pop-ups são bloqueados nativamente. Navegação 100% limpa. |
-| **⚡ Magnet Link Nativo** | Chega de avisos de "Abrir aplicativo?". O Launcher intercepta links `magnet:` e `.torrent` e abre seu cliente (qBittorrent/uTorrent) instantaneamente. |
-| **🎮 Discord RPC** | Mostre para seus amigos o que você está fazendo! Integração rica com Discord mostrando "Navegando na Biblioteca" e tempo decorrido. |
+| **🚀 Real-Debrid Integrado** | Conecte sua conta Premium e baixe torrents via **HTTP Stream** na velocidade máxima da sua internet, com sistema "Auto-Resume" blindado contra quedas de conexão. |
+| **📉 Downloader Nativo** | Não precisa mais de uTorrent ou qBittorrent. Baixe jogos diretamente pelo Launcher com gráficos de velocidade em tempo real e seletor de arquivos. |
+| **💿 Instalação em 1 Clique** | O Launcher detecta automaticamente arquivos `setup.exe` ou `install.exe` ao finalizar o download e exibe um botão direto para **"Instalar Agora"**. |
+| **📚 Minha Biblioteca** | Gerencie seus jogos baixados na aba "Meus Jogos". O banco de dados local salva seus downloads com opções para abrir a pasta ou remover da lista. |
+| **🎮 Discord RPC** | Mostre para seus amigos o que você está fazendo! Integração rica com Discord mostrando "Navegando na Biblioteca", "Baixando [Jogo]" e tempo decorrido. |
 | **🔐 Login Persistente** | Sistema de Auto-Login seguro. Marque "Permanecer Conectado" e acesse sua biblioteca direto, sem digitar senha toda vez. |
 | **🖥️ UI Imersiva** | Design "Frameless" (sem bordas do Windows), barra de título personalizada, Splash Screen animada e Modo Escuro nativo. |
 | **🔄 Auto-Updater** | Você nunca precisa baixar uma nova versão manualmente. O Launcher se atualiza sozinho assim que abrimos novidades. |
