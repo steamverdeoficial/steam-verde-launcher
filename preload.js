@@ -1,31 +1,40 @@
-const { contextBridge, ipcRenderer } = require('electron');
+// preload.js
+const { contextBridge, ipcRenderer, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
+let installPath = null; 
+let archivePath = null;
+
 contextBridge.exposeInMainWorld('ipc', {
-    // --- JANELA / SISTEMA ---
     minimize: () => ipcRenderer.send('site-minimize'),
     maximize: () => ipcRenderer.send('site-maximize'),
     close: () => ipcRenderer.send('site-close'),
     logout: () => ipcRenderer.send('site-logout'),
     restartAndUpdate: () => ipcRenderer.send('restart-app'),
     onShowUpdateBtn: (callback) => ipcRenderer.on('show-update-btn', callback),
-    openExternal: (url) => require('electron').shell.openExternal(url),
+    openExternal: (url) => shell.openExternal(url),
     log: (msg) => ipcRenderer.send('console-log', msg),
-    
-    // --- TORRENT CONTROLS (CORREÇÃO AQUI 👇) ---
-    // Antes estava: startTorrent: (url) => ...
-    // Agora aceita a imagem:
+    goBack: () => ipcRenderer.send('nav-back'),
+    goForward: () => ipcRenderer.send('nav-forward'),
     startTorrent: (url, image) => ipcRenderer.send('start-torrent-download', url, image),
-    
     pauseTorrent: () => ipcRenderer.send('torrent-pause'),
     stopTorrent: () => ipcRenderer.send('torrent-stop'),
     openFolder: () => ipcRenderer.send('torrent-open-folder'),
+    switchTab: (infoHash) => ipcRenderer.send('switch-download-tab', infoHash),
+    onUpdateTabs: (callback) => ipcRenderer.on('update-download-tabs', callback),
     
-    // --- INTERFACE (UI) ---
     toggleFilesModal: () => {
         const modal = document.getElementById('sv-files-modal');
-        if(modal) modal.style.display = (modal.style.display === 'flex') ? 'none' : 'flex';
+        if(modal) {
+            const isHidden = (modal.style.display === 'none' || modal.style.display === '');
+            if (isHidden) {
+                modal.style.display = 'flex';
+                ipcRenderer.send('request-file-list');
+            } else {
+                modal.style.display = 'none';
+            }
+        }
     },
     
     toggleMenu: () => {
@@ -57,26 +66,40 @@ contextBridge.exposeInMainWorld('ipc', {
         }
     },
 
-    // --- REAL DEBRID (MODAL) ---
+    openNotices: () => {
+        const modal = document.getElementById('sv-notices-modal');
+        if(modal) modal.style.display = 'flex';
+        ipcRenderer.send('get-notices'); 
+        const menu = document.getElementById('sv-side-menu');
+        const overlay = document.getElementById('sv-menu-overlay');
+        if(menu) menu.classList.remove('open');
+        if(overlay) overlay.classList.remove('visible');
+    },
+    closeNotices: () => {
+        const modal = document.getElementById('sv-notices-modal');
+        if(modal) modal.style.display = 'none';
+    },
+    markNoticeRead: (id) => ipcRenderer.send('mark-notice-read', id),
+    deleteNotice: (id) => ipcRenderer.send('delete-notice', id),
+    onUpdateNotices: (callback) => ipcRenderer.on('update-notices-list', callback),
+    openNoticeWindow: (notice) => ipcRenderer.send('open-notice-window', notice),
+    onUpdateBadges: (callback) => ipcRenderer.on('update-badges', callback),
+
     openRD: () => {
         const menu = document.getElementById('sv-side-menu');
         const overlay = document.getElementById('sv-menu-overlay');
         const rdModal = document.getElementById('sv-rd-modal');
-        
         if(menu) menu.classList.remove('open');
         if(overlay) overlay.classList.remove('visible');
         if(rdModal) rdModal.style.display = 'flex';
     },
-
     closeRD: () => {
         const rdModal = document.getElementById('sv-rd-modal');
         if(rdModal) rdModal.style.display = 'none';
     },
-
     saveRDToken: (token) => ipcRenderer.send('rd-save-token', token),
     removeRDToken: () => ipcRenderer.send('rd-remove-token'),
 
-    // --- BIBLIOTECA (MEUS JOGOS) ---
     openMyGames: () => {
         const modal = document.getElementById('sv-mygames-modal');
         if(modal) modal.style.display = 'flex';
@@ -86,60 +109,45 @@ contextBridge.exposeInMainWorld('ipc', {
         if(menu) menu.classList.remove('open');
         if(overlay) overlay.classList.remove('visible');
     },
-
     closeMyGames: () => {
         const modal = document.getElementById('sv-mygames-modal');
         if(modal) modal.style.display = 'none';
     },
-
+    // Função para ABRIR PASTA
     openGameFolder: (path) => ipcRenderer.send('open-game-folder', path),
-
-    // Nova função para deletar jogo do banco de dados
+    // Função para EXECUTAR ARQUIVO
+    launchInstaller: (path) => ipcRenderer.send('launch-installer', path),
+    
     removeGame: (name) => {
         if(confirm(`Tem certeza que deseja remover "${name}" da sua lista?\nIsso não apaga os arquivos do PC, apenas o atalho.`)) {
             ipcRenderer.send('remove-game-from-db', name);
         }
-    },
+    }
 });
 
-// --- LISTENERS (Recebendo dados do Main.js) ---
-
-let installPath = null; 
-let archivePath = null;
-
-// 1. Instalação Padrão (EXE direto ou Torrent comum)
+// LISTENERS
 ipcRenderer.on('install-ready', (event, path) => {
     installPath = path; 
     const btn = document.getElementById('sv-float-dl-btn');
     if(btn) {
         btn.classList.add('install-mode');
         btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8,5.14V19.14L19,12.14L8,5.14Z" /></svg> INSTALAR AGORA';
-        btn.style.background = ''; // Reset cor
+        btn.style.background = '';
         btn.onclick = function() {
-            try {
-                if(fs.statSync(installPath).isDirectory()) {
-                    ipcRenderer.send('open-game-folder', installPath);
-                } else {
-                    ipcRenderer.send('launch-installer', installPath);
-                }
-            } catch(e) { ipcRenderer.send('open-game-folder', installPath); }
+            ipcRenderer.send('launch-installer', installPath);
         };
     }
 });
 
-// 2. Arquivos Comprimidos do Real-Debrid (ZIP/RAR)
 ipcRenderer.on('archive-ready', (event, data) => {
     const btn = document.getElementById('sv-float-dl-btn');
     if(!btn) return;
-    
     archivePath = data.path;
     btn.classList.add('install-mode');
     
-    // LÓGICA INTELIGENTE: ZIP vs RAR
     if (data.type === 'zip') {
         btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M19,9H15V3H9V9H5L12,16L19,9M5,18V20H19V18H5Z" /></svg> EXTRAIR E INSTALAR';
         btn.style.background = 'linear-gradient(90deg, #d35400 0%, #e67e22 100%)'; 
-        
         btn.onclick = function() {
             btn.innerHTML = 'EXTRAINDO... (AGUARDE)';
             btn.style.pointerEvents = 'none'; 
@@ -147,21 +155,17 @@ ipcRenderer.on('archive-ready', (event, data) => {
             ipcRenderer.send('extract-archive', archivePath);
         };
     } else {
-        // RAR
         btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M20,18H4V8H20M20,6H12L10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,4Z"/></svg> ABRIR PARA INSTALAR';
         btn.style.background = 'linear-gradient(90deg, #2c3e50 0%, #4ca1af 100%)'; 
-        
         btn.onclick = function() {
             ipcRenderer.send('launch-installer', archivePath); 
         };
     }
 });
 
-// 3. Resultado da Extração do ZIP
 ipcRenderer.on('extract-done', (event, res) => {
     const btn = document.getElementById('sv-float-dl-btn');
     if(!btn) return;
-    
     if(res.success) {
         if(res.setup) {
             btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8,5.14V19.14L19,12.14L8,5.14Z" /></svg> INSTALAR AGORA';
@@ -182,31 +186,23 @@ ipcRenderer.on('extract-done', (event, res) => {
     }
 });
 
-// 4. Renderização da Lista "Meus Jogos"
 ipcRenderer.on('my-games-list', (event, games) => {
     const list = document.getElementById('sv-mygames-list');
     if(!list) return;
-    
     if(games.length === 0) {
         list.innerHTML = '<div style="text-align:center; padding:40px; color:#8f98a0">Você ainda não baixou nenhum jogo via Launcher.</div>';
         return;
     }
-
     list.innerHTML = '';
     games.forEach(game => {
         const safeGamePath = game.path.replace(/\\/g, '/');
         const safeName = game.name.replace(/'/g, "\\'"); 
-        
-        // --- EXIBIÇÃO DA IMAGEM ---
         let iconHtml = '';
         if (game.image && game.image.startsWith('http')) {
-            // IMAGEM
             iconHtml = `<img src="${game.image}" style="width:50px; height:70px; object-fit:cover; border-radius:4px; margin-right:15px; border:1px solid #333;">`;
         } else {
-            // MALETA (Fallback)
             iconHtml = `<svg style="width:30px;height:30px;fill:#a4d007; margin-right:15px;" viewBox="0 0 24 24"><path d="M20,6H16V4A2,2 0 0,0 14,2H10A2,2 0 0,0 8,4V6H4A2,2 0 0,0 2,8V18A2,2 0 0,0 4,20H20A2,2 0 0,0 20,6M10,4H14V6H10V4M20,18H4V8H20V18Z"/></svg>`;
         }
-
         let hasSetup = false;
         let setupFile = '';
         try {
@@ -218,9 +214,10 @@ ipcRenderer.on('my-games-list', (event, games) => {
                 }
             }
         } catch(e) {}
-
-        const setupPath = hasSetup ? safeGamePath + '/' + setupFile : '';
-
+        
+        // PULO DO GATO: Garante que o setupPath aponte para o ARQUIVO .EXE
+        const setupPath = hasSetup ? path.join(game.path, setupFile).replace(/\\/g, '/') : '';
+        
         const item = document.createElement('div');
         item.className = 'sv-game-card';
         item.innerHTML = `
@@ -230,7 +227,7 @@ ipcRenderer.on('my-games-list', (event, games) => {
                 <div class="sv-game-path">${safeGamePath}</div>
             </div>
             <div class="sv-game-actions">
-                ${hasSetup ? `<button class="sv-btn-small btn-play" onclick="window.ipc.openGameFolder('${setupPath}')"><svg style="width:14px;height:14px;fill:#1b2838" viewBox="0 0 24 24"><path d="M8,5.14V19.14L19,12.14L8,5.14Z"/></svg> INSTALAR</button>` : ''}
+                ${hasSetup ? `<button class="sv-btn-small btn-play" onclick="window.ipc.launchInstaller('${setupPath}')"><svg style="width:14px;height:14px;fill:#1b2838" viewBox="0 0 24 24"><path d="M8,5.14V19.14L19,12.14L8,5.14Z"/></svg> INSTALAR</button>` : ''}
                 <button class="sv-btn-small btn-folder-small" onclick="window.ipc.openGameFolder('${safeGamePath}')">
                     <svg style="width:14px;height:14px;fill:#fff" viewBox="0 0 24 24"><path d="M20,18H4V8H20M20,6H12L10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,4Z"/></svg>
                 </button>
@@ -243,7 +240,6 @@ ipcRenderer.on('my-games-list', (event, games) => {
     });
 });
 
-// 5. Progresso do Download
 ipcRenderer.on('torrent-progress', (event, data) => {
     const doc = document;
     const bar = doc.getElementById('sv-download-bar');
@@ -251,39 +247,33 @@ ipcRenderer.on('torrent-progress', (event, data) => {
     const isCollapsed = localStorage.getItem('sv-bar-collapsed') === 'true';
 
     if (tab) tab.style.display = 'flex';
-
     if (bar) {
         if (!isCollapsed && !bar.classList.contains('visible')) bar.classList.add('visible');
         if (isCollapsed && bar.classList.contains('visible')) bar.classList.remove('visible');
     }
-
     if(doc.getElementById('sv-dl-name')) doc.getElementById('sv-dl-name').innerText = data.name;
     if(doc.getElementById('sv-dl-bar')) doc.getElementById('sv-dl-bar').style.width = data.progress + '%';
     if(doc.getElementById('sv-dl-peers')) doc.getElementById('sv-dl-peers').innerText = data.peers + (typeof data.peers === 'string' && data.peers.includes('RD') ? "" : " Peers");
     if(doc.getElementById('sv-dl-eta')) doc.getElementById('sv-dl-eta').innerText = data.eta;
     if(doc.getElementById('sv-dl-perc')) doc.getElementById('sv-dl-perc').innerText = data.progress + '%';
-
     const speedEl = doc.getElementById('sv-dl-speed');
     if(speedEl) {
         if(data.paused) speedEl.innerText = "PAUSADO"; 
         else speedEl.innerText = data.speed;
     }
-
     const iPause = doc.getElementById('icon-pause');
     const iPlay = doc.getElementById('icon-play');
     if(iPause && iPlay) {
         if(data.paused) { iPause.style.display = 'none'; iPlay.style.display = 'block'; } 
         else { iPause.style.display = 'block'; iPlay.style.display = 'none'; }
     }
-
     const canvas = doc.getElementById('sv-dl-canvas');
     if (canvas && data.chart && data.peersChart) {
         const ctx = canvas.getContext('2d');
         const rect = canvas.parentElement.getBoundingClientRect();
         canvas.width = rect.width; canvas.height = rect.height;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Velocidade
+        
         ctx.beginPath();
         const maxVal = Math.max(...data.chart, 100000); 
         const step = canvas.width / (data.chart.length - 1);
@@ -301,11 +291,10 @@ ipcRenderer.on('torrent-progress', (event, data) => {
         ctx.lineTo(canvas.width, canvas.height); ctx.lineTo(0, canvas.height); ctx.closePath();
         const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
         gradient.addColorStop(0, "rgba(164, 208, 7, 0.4)");    
-        gradient.addColorStop(1, "rgba(23, 26, 33, 0)");       
+        gradient.addColorStop(1, "rgba(23, 26, 33, 0)");        
         ctx.fillStyle = gradient; ctx.fill();
         ctx.lineWidth = 2; ctx.strokeStyle = "rgba(164, 208, 7, 0.9)"; ctx.stroke();
-
-        // Peers
+        
         ctx.beginPath();
         const maxPeers = Math.max(...data.peersChart, 10); 
         data.peersChart.forEach((val, index) => {
@@ -323,7 +312,6 @@ ipcRenderer.on('torrent-progress', (event, data) => {
     }
 });
 
-// 6. Lista de Arquivos do Torrent
 ipcRenderer.on('torrent-files', (event, files) => {
     const list = document.getElementById('sv-files-list');
     if(!list) return;
@@ -339,7 +327,6 @@ ipcRenderer.on('torrent-files', (event, files) => {
     });
 });
 
-// 7. Finalização do Download
 ipcRenderer.on('torrent-done', () => {
     const bar = document.getElementById('sv-dl-bar');
     if(bar) bar.style.borderTop = '1px solid #43b581';

@@ -1,52 +1,36 @@
 // main.js
 const { app, BrowserWindow, ipcMain, session, shell, dialog, Notification } = require('electron'); 
 const path = require('path'); 
-const fs = require('fs');  
+const fs = require('fs'); 
 const DiscordRPC = require('discord-rpc'); 
 const { autoUpdater } = require('electron-updater'); 
 const log = require('electron-log'); 
-const WebTorrent = require('webtorrent'); 
-
-// Módulos de Extração e Sistema
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const sevenBin = require('7zip-bin');
 
 // --- MÓDULOS SEPARADOS ---
 const Styles = require('./src/styles');
 const Scripts = require('./src/scripts');
 const RD = require('./src/realdebrid');
+const Notifications = require('./src/notifications'); 
+const TorrentManager = require('./src/downloader'); 
 
 // --- CONFIGURAÇÃO ---
-const torrentClient = new WebTorrent();
-let currentTorrent = null;
 let downloadPath = app.getPath('downloads'); 
-// DADOS PARA OS GRÁFICOS
-let chartData = new Array(150).fill(0); 
-let peersData = new Array(150).fill(0); 
-let isPausedManual = false; 
+let torrentMgr = null; 
+
+// Proteção para criar a pasta de dados caso não exista (evita tela cinza em instalação limpa)
+const userDataPath = app.getPath('userData');
+if (!fs.existsSync(userDataPath)) {
+    try { fs.mkdirSync(userDataPath, { recursive: true }); } catch(e) {}
+}
 
 // Inicializa RD Token
 RD.loadToken();
 
 // DATABASE LOCAL
-const gamesDbPath = path.join(app.getPath('userData'), 'games.json');
+const gamesDbPath = path.join(userDataPath, 'games.json');
 if (!fs.existsSync(gamesDbPath)) { fs.writeFileSync(gamesDbPath, JSON.stringify([])); }
-
-// TRACKERS
-const AGGRESSIVE_TRACKERS = [
-    "udp://tracker.opentrackr.org:1337/announce",
-    "udp://9.rarbg.com:2810/announce",
-    "udp://tracker.openbittorrent.com:80/announce",
-    "udp://opentracker.i2p.rocks:6969/announce",
-    "udp://tracker.internetwarriors.net:1337/announce",
-    "udp://tracker.leechers-paradise.org:6969/announce",
-    "udp://coppersurfer.tk:6969/announce",
-    "udp://tracker.zer0day.to:1337/announce",
-    "http://tracker.openbittorrent.com:80/announce",
-    "udp://open.stealth.si:80/announce",
-    "udp://exodus.desync.com:6969/announce",
-    "wss://tracker.openwebtorrent.com"
-];
 
 autoUpdater.logger = log; 
 autoUpdater.logger.transports.file.level = 'info'; 
@@ -59,6 +43,12 @@ const NAVIGATE_URL  = 'https://steamverde.net';
 
 let loginWindow, siteWindow, loadingWindow;  
 let currentUser = { name: 'Assinante', avatar: '' }; 
+
+if (process.platform === 'win32') {
+    app.setAppUserModelId('com.steamverde.launcher');
+}
+
+// --- FUNÇÕES UTILITÁRIAS ---
 
 function getIconBase64() { 
     try { 
@@ -76,7 +66,6 @@ function formatBytes(bytes, decimals = 2) {
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
-// FUNÇÃO SAVE DB (ATUALIZADA PARA SALVAR IMAGEM)
 function saveGameToDb(name, path, image) {
     try {
         const data = fs.readFileSync(gamesDbPath);
@@ -118,6 +107,8 @@ function updateSplashStatus(text, percent = null) {
     } 
 } 
 
+// --- JANELAS ---
+
 function createLoadingWindow() { 
   loadingWindow = new BrowserWindow({ 
     width: 600, height: 600, frame: false, transparent: true, alwaysOnTop: true, resizable: false, skipTaskbar: true,  
@@ -140,6 +131,54 @@ function createLoginWindow() {
   loginWindow.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; }); 
 } 
 
+function createNoticeWindow(notice) {
+    const win = new BrowserWindow({ 
+        width: 500, height: 600, 
+        frame: false, 
+        transparent: false,
+        backgroundColor: '#1b2838',
+        icon: path.join(__dirname, 'assets', 'icon.ico'),
+        webPreferences: { nodeIntegration: false, contextIsolation: true }
+    });
+
+    const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body { margin: 0; padding: 0; background: #1b2838; color: #c7d5e0; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; border: 1px solid #a4d007; box-sizing: border-box; }
+            .title-bar { height: 32px; background: #171a21; display: flex; justify-content: space-between; align-items: center; padding: 0 10px; -webkit-app-region: drag; border-bottom: 1px solid #333; }
+            .title { font-weight: bold; font-size: 12px; color: #fff; letter-spacing: 1px; }
+            .close-btn { -webkit-app-region: no-drag; background: transparent; border: none; color: #8f98a0; cursor: pointer; font-size: 16px; padding: 0 10px; height: 100%; display: flex; align-items: center; transition: 0.2s; }
+            .close-btn:hover { background: #c21a1a; color: white; }
+            .content { flex: 1; padding: 20px; overflow-y: auto; word-wrap: break-word; }
+            .content::-webkit-scrollbar { width: 8px; }
+            .content::-webkit-scrollbar-track { background: #171a21; }
+            .content::-webkit-scrollbar-thumb { background: #323f55; border-radius: 4px; }
+            .content::-webkit-scrollbar-thumb:hover { background: #a4d007; }
+            h2 { margin-top: 0; color: #a4d007; border-bottom: 1px solid #333; padding-bottom: 10px; }
+            .date { font-size: 11px; color: #666; margin-bottom: 15px; display: block; }
+            img { max-width: 100%; height: auto; border-radius: 4px; }
+            a { color: #47bfff; text-decoration: none; }
+            a:hover { text-decoration: underline; }
+        </style>
+    </head>
+    <body>
+        <div class="title-bar">
+            <span class="title">STEAM VERDE - AVISO</span>
+            <button class="close-btn" onclick="window.close()">✕</button>
+        </div>
+        <div class="content">
+            <h2>${notice.title}</h2>
+            <span class="date">Publicado em: ${notice.date}</span>
+            <div>${notice.content}</div>
+        </div>
+    </body>
+    </html>`;
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent));
+}
+
 function createSiteWindow(targetUrl) { 
   siteWindow = new BrowserWindow({ 
     width: 1280, height: 800, minWidth: 1024, title: 'Steam Verde', icon: path.join(__dirname, 'assets', 'icon.ico'), 
@@ -154,6 +193,9 @@ function createSiteWindow(targetUrl) {
     autoHideMenuBar: true, backgroundColor: '#1b2838', show: false 
   }); 
 
+  // --- INICIALIZA O GERENCIADOR DE TORRENTS ---
+  torrentMgr = new TorrentManager(siteWindow, Notifications, RD);
+
   siteWindow.webContents.setUserAgent(CHROME_USER_AGENT); 
   setupNetworkInterception(siteWindow.webContents.session); 
   siteWindow.loadURL(targetUrl); 
@@ -162,9 +204,14 @@ function createSiteWindow(targetUrl) {
     siteWindow.show(); siteWindow.maximize();  
     setDiscordActivity('Navegando na Biblioteca', 'Assinante VIP'); 
     if (loadingWindow && !loadingWindow.isDestroyed()) loadingWindow.close(); 
+    
+    // VERIFICAÇÃO AUTOMÁTICA DE AVISOS
+    setTimeout(() => Notifications.checkNewNotices(siteWindow), 3000); 
+    setInterval(() => Notifications.checkNewNotices(siteWindow), 60000); 
   }); 
   siteWindow.on('closed', () => { app.quit(); }); 
 
+  // INJEÇÃO DE CSS/JS
   siteWindow.webContents.on('dom-ready', async () => { 
     try { 
         await siteWindow.webContents.insertCSS(Styles.TITLE_BAR_CSS); 
@@ -186,7 +233,6 @@ function createSiteWindow(targetUrl) {
   siteWindow.webContents.on('will-navigate', (event, url) => {  
       if (url.startsWith('magnet:') || url.endsWith('.torrent')) {  
           event.preventDefault(); 
-          // Ajustado para capturar imagem no clique, aqui é fallback
           startTorrentDownload(url, '');
           siteWindow.webContents.executeJavaScript(Scripts.HIDE_LOADER_SCRIPT).catch(() => {});  
       }  
@@ -210,255 +256,72 @@ function setupNetworkInterception(sess) {
     }); 
 } 
 
+// --- LÓGICA DE INÍCIO DE DOWNLOAD ---
 async function startTorrentDownload(magnetLink, gameImage) {
-    if (currentTorrent) {
-        dialog.showMessageBox(siteWindow, { type: 'info', title: 'Fila Cheia', message: 'Já existe um download em andamento.' });
-        return;
-    }
-
-    // --- INTERCEPTAÇÃO REAL DEBRID ---
-    // Passamos a imagem para o RD também
-    const rdHandled = await RD.handleMagnet(magnetLink, siteWindow, downloadPath, {
-        saveGameToDb,
-        formatBytes,
-        gameImage // Passa a capa para salvar no final
-    });
-
-    if(rdHandled) return; // RD assumiu ou usuário cancelou
-
-    // --- FLUXO TORRENT PADRÃO ---
-    siteWindow.webContents.executeJavaScript(`
-        localStorage.setItem('sv-bar-collapsed', 'false');
-        document.getElementById('sv-download-bar').classList.add('visible');
-        document.getElementById('sv-toggle-tab').style.display = 'flex';
-        document.getElementById('sv-dl-name').innerText = "Conectando aos Trackers...";
-    `);
-
-    isPausedManual = false; 
-
-    client.add(magnetLink, { path: downloadPath, announce: AGGRESSIVE_TRACKERS }, (torrent) => {
-        currentTorrent = torrent;
-        
-        const filesData = torrent.files.map((f, index) => ({
-            index: index,
-            name: f.name,
-            size: formatBytes(f.length),
-            checked: true 
-        }));
-        siteWindow.webContents.send('torrent-files', filesData);
-
-        const interval = setInterval(() => {
-            if (!currentTorrent || currentTorrent.destroyed) {
-                clearInterval(interval);
-                return;
-            }
-
-            if (isPausedManual) {
-                chartData.push(0); chartData.shift(); 
-                peersData.push(0); peersData.shift(); 
-                
-                const data = {
-                    name: torrent.name,
-                    progress: (torrent.progress * 100).toFixed(1),
-                    speed: '0 B/s', 
-                    peers: 0,
-                    eta: "PAUSADO",
-                    paused: true,
-                    chart: chartData,
-                    peersChart: peersData
-                };
-                if (siteWindow && !siteWindow.isDestroyed()) siteWindow.webContents.send('torrent-progress', data);
-                return; 
-            }
-
-            chartData.push(torrent.downloadSpeed); chartData.shift(); 
-            peersData.push(torrent.numPeers); peersData.shift(); 
-
-            let eta = '--:--';
-            if (torrent.timeRemaining && torrent.timeRemaining < 86400000) { 
-                 const hrs = Math.floor(torrent.timeRemaining / 3600000);
-                 const mins = Math.floor((torrent.timeRemaining % 3600000) / 60000);
-                 const secs = Math.floor((torrent.timeRemaining % 60000) / 1000);
-                 if(hrs > 0) eta = `${hrs}h ${mins}m`;
-                 else eta = `${mins}m ${secs}s`;
-            }
-
-            const data = {
-                name: torrent.name,
-                progress: (torrent.progress * 100).toFixed(1),
-                speed: formatBytes(torrent.downloadSpeed) + '/s',
-                peers: torrent.numPeers,
-                eta: eta,
-                paused: false,
-                chart: chartData,
-                peersChart: peersData
-            };
-
-            if (siteWindow && !siteWindow.isDestroyed()) {
-                siteWindow.webContents.send('torrent-progress', data);
-            }
-        }, 1000);
-
-        torrent.on('done', () => {
-            if (isPausedManual) return;
-            
-            new Notification({ title: 'Steam Verde', body: 'Download Concluído! Arquivo Pronto para Instalar.' }).show();
-            
-            if(siteWindow && !siteWindow.isDestroyed()) {
-                siteWindow.webContents.send('torrent-done');
-                siteWindow.webContents.send('torrent-progress', {
-                    name: torrent.name, progress: "100.0", speed: "0 B/s", peers: 0, eta: "Download Concluído", paused: false, chart: chartData, peersChart: peersData
-                });
-            }
-
-            const fullPath = path.join(downloadPath, torrent.name);
-            saveGameToDb(torrent.name, fullPath, gameImage); 
-
-            // --- CORREÇÃO DO BUG AQUI ---
-            fs.readdir(fullPath, (err, files) => {
-                if(!err && files) {
-                    // O erro estava aqui: havia um 'files.find' repetido dentro da condição
-                    // Agora corrigido para verificar apenas o arquivo 'f'
-                    const setup = files.find(f => 
-                        f.toLowerCase().includes('setup.exe') || 
-                        f.toLowerCase().includes('install.exe') || 
-                        (f.toLowerCase().endsWith('.exe') && !f.toLowerCase().includes('crash') && !f.toLowerCase().includes('unity'))
-                    );
-                    
-                    if(setup) {
-                        const setupPath = path.join(fullPath, setup);
-                        siteWindow.webContents.send('install-ready', setupPath);
-                    }
-                }
-            });
-            // -----------------------------
-
-            torrent.destroy(() => { currentTorrent = null; });
+    if (torrentMgr) {
+        // Tenta RD primeiro
+        const rdHandled = await RD.handleMagnet(magnetLink, siteWindow, downloadPath, {
+            saveGameToDb,
+            formatBytes: (b) => torrentMgr.formatBytes(b),
+            gameImage 
         });
-    });
+
+        if(rdHandled) return; 
+
+        // Se não foi RD, vai para o TorrentManager
+        torrentMgr.startDownload(magnetLink, downloadPath, gameImage, saveGameToDb);
+    }
 }
 
-ipcMain.on('launch-installer', (event, filePath) => {
-    shell.openPath(filePath);
+// --- IPC HANDLERS (COMUNICAÇÃO) ---
+
+ipcMain.on('nav-back', () => {
+    if(siteWindow && siteWindow.webContents.canGoBack()) siteWindow.webContents.goBack();
+});
+ipcMain.on('nav-forward', () => {
+    if(siteWindow && siteWindow.webContents.canGoForward()) siteWindow.webContents.goForward();
 });
 
-ipcMain.on('torrent-pause', () => {
-    if (!currentTorrent) return;
-    isPausedManual = !isPausedManual; 
-    if (isPausedManual) {
-        currentTorrent.pause();
-        currentTorrent.files.forEach(file => file.deselect());
-        currentTorrent.deselect(0, currentTorrent.pieces.length - 1, false);
-    } else {
-        currentTorrent.resume();
-        currentTorrent.files.forEach(file => file.select());
-        currentTorrent.select(0, currentTorrent.pieces.length - 1, false);
+// --- CORREÇÃO DO ERRO DE ARQUIVO EM USO ---
+ipcMain.on('launch-installer', (event, filePath) => { 
+    // 1. Tenta pausar o torrent (se estiver ativo) para soltar o arquivo
+    if (torrentMgr) {
+        torrentMgr.pauseByPath(filePath);
     }
+    
+    // 2. Aguarda 500ms para o SO liberar o lock e executa
+    setTimeout(() => {
+        shell.openPath(filePath); 
+    }, 500);
 });
 
-ipcMain.on('torrent-stop', () => {
-    // 1. Tenta cancelar RD
+ipcMain.on('torrent-pause', () => { if(torrentMgr) torrentMgr.togglePause(); });
+ipcMain.on('torrent-stop', () => { 
     if(RD.cancelDownload()) {
-         chartData.fill(0); peersData.fill(0);
-         if(siteWindow) siteWindow.webContents.executeJavaScript(`
-            document.getElementById('sv-download-bar').classList.remove('visible');
-            document.getElementById('sv-toggle-tab').style.display = 'none';
-         `);
-         return;
+        if(siteWindow) siteWindow.webContents.send('torrent-progress', { paused: true, speed: 'CANCELADO' }); 
+        return;
     }
-
-    // 2. Cancela Torrent Normal
-    if(currentTorrent) {
-        const fullPath = path.join(currentTorrent.path, currentTorrent.name);
-        currentTorrent.destroy({ force: true }, () => {
-            setTimeout(() => {
-                try { fs.rm(fullPath, { recursive: true, force: true }, () => {}); } catch(e) {}
-            }, 1000); 
-        });
-        currentTorrent = null;
-        chartData.fill(0);
-        peersData.fill(0); 
-        isPausedManual = false;
-        if(siteWindow) siteWindow.webContents.executeJavaScript(`
-            document.getElementById('sv-download-bar').classList.remove('visible');
-            document.getElementById('sv-toggle-tab').style.display = 'none';
-            document.getElementById('sv-float-dl-btn').classList.remove('install-mode');
-            localStorage.setItem('sv-bar-collapsed', 'false');
-        `);
-    }
+    if(torrentMgr) torrentMgr.stopCurrent(); 
 });
-
-ipcMain.on('torrent-toggle-file', (event, index, selected, isPriority) => {
-    if(currentTorrent && currentTorrent.files[index]) {
-        if(selected) currentTorrent.files[index].select();
-        else currentTorrent.files[index].deselect();
-    }
-});
-
+ipcMain.on('torrent-toggle-file', (event, index, selected) => { if(torrentMgr) torrentMgr.toggleFile(index, selected); });
 ipcMain.on('torrent-open-folder', () => shell.openPath(downloadPath));
-ipcMain.on('console-log', (event, msg) => console.log("[RENDERER]", msg));
-
-// IPC MODIFICADO PARA RECEBER IMAGEM
 ipcMain.on('start-torrent-download', (event, url, image) => startTorrentDownload(url, image));
+ipcMain.on('switch-download-tab', (event, infoHash) => { if(torrentMgr) torrentMgr.setActive(infoHash); });
+ipcMain.on('request-file-list', () => { if(torrentMgr) torrentMgr.sendFilesList(); });
 
-// IPCs MENU
-ipcMain.on('get-my-games', (event) => {
-    try {
-        const data = fs.readFileSync(gamesDbPath);
-        const games = JSON.parse(data);
-        event.reply('my-games-list', games);
-    } catch (e) { event.reply('my-games-list', []); }
-});
-
-ipcMain.on('remove-game-from-db', (event, gameName) => {
-    try {
-        if (fs.existsSync(gamesDbPath)) {
-            const data = JSON.parse(fs.readFileSync(gamesDbPath));
-            const newGames = data.filter(g => g.name !== gameName);
-            fs.writeFileSync(gamesDbPath, JSON.stringify(newGames));
-            event.reply('my-games-list', newGames);
-        }
-    } catch (e) { console.error(e); }
-});
-
-ipcMain.on('open-game-folder', (event, folderPath) => {
-    shell.openPath(folderPath);
-});
-
-// --- IPC EXTRAÇÃO 7ZIP (ROBUSTA) ---
 ipcMain.on('extract-archive', (event, archivePath) => {
     const fileNameNoExt = path.basename(archivePath, path.extname(archivePath));
     const targetDir = path.join(path.dirname(archivePath), fileNameNoExt);
-    
-    // Ajuste de caminho do 7zip para quando estiver empacotado
     let pathTo7zip = sevenBin.path7za;
-    if (app.isPackaged) {
-        pathTo7zip = pathTo7zip.replace('app.asar', 'app.asar.unpacked');
-    }
-
+    if (app.isPackaged) { pathTo7zip = pathTo7zip.replace('app.asar', 'app.asar.unpacked'); }
     event.reply('extract-start');
-    console.log(`[EXTRACTION] Tentando extrair: "${archivePath}"`);
-    console.log(`[EXTRACTION] Destino: "${targetDir}"`);
-
     if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
-
-    // Comando nativo do 7zip: x (extrair), -o (destino), -y (sim p/ tudo)
     const args = ['x', archivePath, `-o${targetDir}`, '-y', '-bsp1'];
-
     execFile(pathTo7zip, args, (error, stdout, stderr) => {
         if (error) {
-            console.error("[EXTRACTION] Erro Fatal:", error);
-            dialog.showMessageBox({ 
-                type: 'error', 
-                title: 'Erro na Extração', 
-                message: 'Ocorreu um erro ao tentar extrair o arquivo.\nDetalhe: ' + stderr 
-            });
-            event.reply('extract-done', { success: false });
-            return;
+            dialog.showMessageBox({ type: 'error', title: 'Erro na Extração', message: 'Detalhe: ' + stderr });
+            event.reply('extract-done', { success: false }); return;
         }
-
-        console.log("[EXTRACTION] Sucesso!");
-        
         let setupPath = null;
         try {
             function findSetup(dir) {
@@ -478,37 +341,39 @@ ipcMain.on('extract-archive', (event, archivePath) => {
                 }
                 return null;
             }
-
             setupPath = findSetup(targetDir);
-
-            if(setupPath) {
-                event.reply('extract-done', { success: true, setup: setupPath });
-            } else {
-                event.reply('extract-done', { success: true, setup: null, folder: targetDir });
-            }
-
+            event.reply('extract-done', { success: true, setup: setupPath, folder: targetDir });
         } catch(e) {
             event.reply('extract-done', { success: true, setup: null, folder: targetDir });
         }
     });
 });
 
-// IPCs REAL DEBRID
-ipcMain.on('rd-save-token', (e, token) => {
-    RD.saveToken(token);
-    RD.getUserInfo().then(info => {
-        if(info) {
-             new Notification({title: "Real-Debrid", body: `Conectado como ${info.username}`}).show();
-             siteWindow.webContents.executeJavaScript(`document.getElementById('rd-status').innerText = "Conectado: ${info.username} (Premium)"; document.getElementById('rd-status').style.color="#a4d007";`);
-        } else {
-             new Notification({title: "Real-Debrid", body: `Token Inválido`}).show();
-             siteWindow.webContents.executeJavaScript(`document.getElementById('rd-status').innerText = "Erro: Token Inválido"; document.getElementById('rd-status').style.color="red";`);
-        }
-    });
+ipcMain.on('get-my-games', (event) => {
+    try {
+        const data = fs.readFileSync(gamesDbPath);
+        event.reply('my-games-list', JSON.parse(data));
+    } catch (e) { event.reply('my-games-list', []); }
 });
-ipcMain.on('rd-remove-token', () => RD.removeToken());
 
-const client = torrentClient;
+ipcMain.on('remove-game-from-db', (event, gameName) => {
+    try {
+        if (fs.existsSync(gamesDbPath)) {
+            const data = JSON.parse(fs.readFileSync(gamesDbPath));
+            const newGames = data.filter(g => g.name !== gameName);
+            fs.writeFileSync(gamesDbPath, JSON.stringify(newGames));
+            event.reply('my-games-list', newGames);
+        }
+    } catch (e) { console.error(e); }
+});
+ipcMain.on('open-game-folder', (event, folderPath) => { shell.openPath(folderPath); });
+ipcMain.on('rd-save-token', (e, token) => { RD.saveToken(token); });
+ipcMain.on('rd-remove-token', () => RD.removeToken());
+ipcMain.on('get-notices', () => { if(siteWindow) Notifications.checkNewNotices(siteWindow); });
+ipcMain.on('mark-notice-read', (e, id) => { if(siteWindow) Notifications.markAsRead(id, siteWindow); });
+ipcMain.on('delete-notice', (e, id) => { if(siteWindow) Notifications.deleteNotice(id, siteWindow); });
+ipcMain.on('open-notice-window', (e, notice) => { createNoticeWindow(notice); });
+ipcMain.on('console-log', (event, msg) => console.log("[RENDERER]", msg));
 
 app.whenReady().then(() => { 
   app.commandLine.appendSwitch('enable-gpu-rasterization'); 
@@ -526,8 +391,21 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); }); 
 autoUpdater.on('update-not-available', () => { if (!siteWindow && !loginWindow) checkLoginAndStart(); }); 
 autoUpdater.on('error', () => { if (!siteWindow && !loginWindow) checkLoginAndStart(); }); 
+autoUpdater.on('update-downloaded', () => { 
+    if (loadingWindow) {
+        autoUpdater.quitAndInstall(); 
+    } else if (siteWindow) {
+        siteWindow.webContents.executeJavaScript(Scripts.SHOW_UPDATE_BTN_SCRIPT).catch(() => {});
+        Notifications.sendSystemNotification(
+            'Nova Atualização Pronta', 
+            'Clique para reiniciar e instalar.',
+            siteWindow, 
+            null,
+            () => autoUpdater.quitAndInstall()
+        );
+    } 
+});
 autoUpdater.on('download-progress', (p) => { if (loadingWindow) updateSplashStatus('Baixando: ' + Math.round(p.percent) + '%', Math.round(p.percent)); }); 
-autoUpdater.on('update-downloaded', () => { if (loadingWindow) autoUpdater.quitAndInstall(); else if (siteWindow) siteWindow.webContents.executeJavaScript(Scripts.SHOW_UPDATE_BTN_SCRIPT).catch(() => {}); }); 
 
 async function checkLoginAndStart() { 
     updateSplashStatus('Iniciando...'); 

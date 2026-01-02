@@ -1,3 +1,5 @@
+// src/styles.js
+
 const TITLE_BAR_CSS = ` 
   html { padding-top: 0px !important; height: 100vh; box-sizing: border-box; } 
   body { margin-top: 0 !important; } 
@@ -10,10 +12,10 @@ const TITLE_BAR_CSS = `
   .sv-bar-logo { font-size: 12px; font-weight: bold; letter-spacing: 1px; color: #8f98a0; white-space: nowrap; } 
   .sv-bar-controls { display: flex; height: 100%; -webkit-app-region: no-drag; align-items: center; } 
   .sv-version-tag { font-size: 11px; color: #576574; margin-right: 10px; cursor: default; opacity: 0.8; }
-  #sv-update-btn { display: none; color: #43b581; cursor: pointer; margin-right: 15px; background: transparent; border: none; align-items: center; height: 100%; animation: sv-pulse 2s infinite; } 
+  #sv-update-btn { display: none; color: #43b581; cursor: pointer; margin-right: 15px; background: transparent; border: none; align-items: center; height: 100%; animation: sv-pulse 2s infinite; -webkit-app-region: no-drag; } 
   #sv-update-btn:hover { color: #a4d007; } 
   @keyframes sv-pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } } 
-  .sv-user-menu { position: relative; display: flex; align-items: center; cursor: pointer; padding: 0 15px; height: 100%; transition: 0.2s; border-left: 1px solid #282c34; } 
+  .sv-user-menu { position: relative; display: flex; align-items: center; cursor: pointer; padding: 0 15px; height: 100%; transition: 0.2s; border-left: 1px solid #282c34; -webkit-app-region: no-drag; } 
   .sv-user-menu:hover { background: #323f55; color: white; } 
   .sv-user-name { font-size: 12px; font-weight: 600; margin-right: 8px; color: #a4d007; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } 
   .sv-arrow { font-size: 8px; } 
@@ -21,13 +23,22 @@ const TITLE_BAR_CSS = `
   #sv-logout-dropdown.show { display: flex; } 
   .sv-logout-item { padding: 12px 15px; font-size: 12px; cursor: pointer; color: #c7d5e0; text-decoration: none; } 
   .sv-logout-item:hover { background: #c21a1a; color: white; } 
-  .sv-win-btn { width: 45px; height: 100%; border: none; background: transparent; color: #8f98a0; cursor: pointer; display: flex; justify-content: center; align-items: center; transition: background 0.2s; padding: 0; } 
+  .sv-win-btn { width: 45px; height: 100%; border: none; background: transparent; color: #8f98a0; cursor: pointer; display: flex; justify-content: center; align-items: center; transition: background 0.2s; padding: 0; -webkit-app-region: no-drag; } 
   .sv-win-btn svg { width: 10px; height: 10px; fill: currentColor; } 
   .sv-win-btn:not(.sv-close-btn):hover { background: #323f55; color: white; } 
   #sv-custom-titlebar .sv-bar-controls .sv-close-btn:hover { background: #a4d007 !important; color: #171a21 !important; } 
-  .sv-menu-btn { width: 40px; height: 100%; display: flex; justify-content: center; align-items: center; cursor: pointer; border-right: 1px solid #282c34; color: #a4d007; transition: 0.2s; -webkit-app-region: no-drag; }
+  
+  .sv-menu-btn { width: 40px; height: 100%; display: flex; justify-content: center; align-items: center; cursor: pointer; border-right: 1px solid #282c34; color: #8f98a0; transition: 0.2s; -webkit-app-region: no-drag !important; position: relative; }
   .sv-menu-btn:hover { background: #323f55; color: #fff; }
-  .sv-menu-btn svg { width: 20px; height: 20px; fill: currentColor; }
+  .sv-menu-btn svg { width: 24px; height: 24px; fill: currentColor; }
+
+  .sv-nav-btn { -webkit-app-region: no-drag !important; background: transparent; border: none; color: #8f98a0; width: 34px; height: 100%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; margin: 0; }
+  .sv-nav-btn:hover { color: #fff; background: #323f55; }
+  .sv-nav-btn svg { width: 20px !important; height: 20px !important; fill: currentColor; min-width: 20px; min-height: 20px; }
+
+  #sv-news-badge { width: 8px; height: 8px; background: #a4d007; border-radius: 50%; position: absolute; top: 6px; right: 6px; display: none; box-shadow: 0 0 5px #a4d007; z-index: 10; border: 1px solid #171a21; }
+  .sv-menu-item.has-news { border-left-color: #a4d007; background: rgba(164, 208, 7, 0.1); }
+  .sv-menu-item.has-news::after { content: '!'; color: #1b2838; font-weight: bold; background: #a4d007; width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; margin-left: auto; }
 `; 
 
 const CUSTOM_UI_CSS = `
@@ -47,7 +58,7 @@ const CUSTOM_UI_CSS = `
   #sv-side-menu.open { left: 0; }
   .sv-menu-item { padding: 15px 25px; color: #c7d5e0; font-family: 'Segoe UI', sans-serif; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 15px; transition: 0.2s; border-left: 3px solid transparent; text-decoration: none; }
   .sv-menu-item:hover { background: #1f232b; color: #fff; border-left-color: #a4d007; }
-  .sv-menu-item svg { width: 20px; height: 20px; fill: currentColor; }
+  .sv-menu-item svg { width: 24px; height: 24px; }
   .sv-menu-divider { height: 1px; background: #282c34; margin: 10px 0; }
   
   #sv-menu-overlay { position: fixed; top: 32px; left: 0; width: 100%; height: calc(100% - 32px); background: rgba(0,0,0,0.5); z-index: 2147483646; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
@@ -62,10 +73,59 @@ const CUSTOM_UI_CSS = `
   #sv-float-dl-btn svg { width: 24px; height: 24px; fill: white; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3)); }
 
   /* BARRA PRINCIPAL */
-  #sv-download-bar { position: fixed; bottom: -140px; left: 0; width: 100%; height: 110px; background: #0f1115; border-top: 1px solid #a4d007; z-index: 2147483647 !important; display: flex; align-items: center; transition: bottom 0.5s cubic-bezier(0.22, 1, 0.36, 1); padding: 0; box-shadow: 0 -10px 50px rgba(0,0,0,1); overflow: hidden; }
+  #sv-download-bar { position: fixed; bottom: -140px; left: 0; width: 100%; height: 110px; background: #0f1115; border-top: 1px solid #a4d007; z-index: 2147483647 !important; display: flex; align-items: center; transition: bottom 0.5s cubic-bezier(0.22, 1, 0.36, 1); padding: 0; box-shadow: 0 -10px 50px rgba(0,0,0,1); overflow: visible !important; }
   #sv-download-bar.visible { bottom: 0; }
 
-  /* LEGENDA CORRIGIDA */
+  /* CSS DAS ABAS */
+  #sv-dl-tabs {
+    position: absolute;
+    top: -29px; 
+    left: 0;
+    display: flex;
+    gap: 4px;
+    z-index: 2147483640;
+    padding-left: 20px;
+    align-items: flex-end; 
+  }
+  .sv-dl-tab {
+    background: #171a21; 
+    color: #8f98a0;
+    padding: 6px 15px 4px 15px; 
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    font-size: 11px;
+    font-weight: bold;
+    cursor: pointer;
+    border: 1px solid #333;
+    border-bottom: 1px solid #a4d007; 
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: all 0.2s;
+    opacity: 0.7;
+    height: 28px; 
+    box-sizing: border-box;
+  }
+  .sv-dl-tab.active {
+    background: #0f1115; 
+    color: #a4d007;
+    border-color: #a4d007;
+    border-bottom: 1px solid #0f1115; 
+    z-index: 2147483650; 
+    opacity: 1;
+    padding-bottom: 5px;
+    height: 30px; 
+    margin-bottom: -1px; 
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.5);
+  }
+  .sv-dl-tab:hover {
+    color: #fff;
+    background: #282c34;
+    opacity: 1;
+  }
+
+  /* LEGENDA */
   #sv-dl-legend { position: absolute; top: 5px; right: 30px; display: flex; gap: 20px; z-index: 2147483648 !important; pointer-events: none; font-family: 'Segoe UI', sans-serif; font-size: 11px; font-weight: 700; }
   .sv-legend-item { display: flex; align-items: center; gap: 8px; color: #ffffff !important; opacity: 1 !important; text-shadow: 0 0 4px #000, 0 0 2px #000; letter-spacing: 0.5px; }
   .sv-legend-line { width: 18px; height: 4px; border-radius: 2px; display:block; box-shadow: 0 0 5px rgba(0,0,0,0.5); }
@@ -89,8 +149,8 @@ const CUSTOM_UI_CSS = `
   .sv-prio-btn.active { color: #ffcc00 !important; filter: drop-shadow(0 0 5px rgba(255, 204, 0, 0.8)); transform: scale(1.1); }
   
   /* MODAL */
-  #sv-files-modal, #sv-mygames-modal, #sv-rd-modal { position: fixed; bottom: 120px; right: 30px; width: 500px; max-height: 400px; background: #1b2838; border: 1px solid #46bd14; border-radius: 10px; display: none; flex-direction: column; z-index: 2147483647 !important; box-shadow: 0 20px 50px rgba(0,0,0,1); overflow: hidden; }
-  #sv-mygames-modal, #sv-rd-modal { top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 500px; bottom: auto; right: auto; max-height: none; }
+  #sv-files-modal, #sv-mygames-modal, #sv-rd-modal, #sv-notices-modal { position: fixed; bottom: 120px; right: 30px; width: 500px; max-height: 400px; background: #1b2838; border: 1px solid #46bd14; border-radius: 10px; display: none; flex-direction: column; z-index: 2147483647 !important; box-shadow: 0 20px 50px rgba(0,0,0,1); overflow: hidden; }
+  #sv-mygames-modal, #sv-rd-modal, #sv-notices-modal { top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 500px; bottom: auto; right: auto; max-height: none; }
   #sv-rd-modal { width: 500px; height: auto; min-height: 300px; border-color: #ffcc00; }
   .sv-modal-header { color:#fff; padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; background: #171a21; }
   .sv-modal-body { overflow-y: auto; flex: 1; padding: 10px; }
@@ -114,6 +174,19 @@ const CUSTOM_UI_CSS = `
   .rd-btn { background: #ffcc00; color: #000; padding: 10px 20px; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; width: 100%; margin-top: 10px; }
   .rd-btn:hover { background: #e6b800; }
   .rd-status { font-size: 12px; margin-top: 10px; text-align: center; color: #8f98a0; }
+
+  /* CSS DOS AVISOS */
+  #sv-notices-modal { width: 600px; height: 500px; border: 1px solid #a4d007; }
+  .sv-notice-item { background: #171a21; border-left: 3px solid #333; margin-bottom: 10px; padding: 15px; border-radius: 4px; transition: 0.2s; position: relative; }
+  .sv-notice-item.unread { border-left-color: #a4d007; background: #1f232b; }
+  .sv-notice-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+  .sv-notice-title { font-weight: bold; color: #fff; font-size: 14px; }
+  .sv-notice-date { font-size: 11px; color: #8f98a0; }
+  .sv-notice-body { font-size: 13px; color: #c7d5e0; line-height: 1.4; margin-top: 8px; }
+  .sv-notice-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
+  .sv-notice-btn { padding: 4px 8px; font-size: 10px; cursor: pointer; border: 1px solid #333; background: transparent; color: #8f98a0; border-radius: 3px; }
+  .sv-notice-btn:hover { color: #fff; border-color: #fff; }
+  .sv-notice-btn.del:hover { color: #ff4d4d; border-color: #ff4d4d; }
 `;
 
 const LOADING_CSS = ` 

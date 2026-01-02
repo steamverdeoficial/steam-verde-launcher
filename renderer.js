@@ -20,10 +20,10 @@ if (btnClose) {
 const loginForm = document.getElementById('loginForm');
 const loginBtn = document.getElementById('loginBtn');
 const errorMsg = document.getElementById('error-msg');
-// NOVO: Captura o checkbox "Permanecer Conectado"
+// Captura o checkbox "Permanecer Conectado"
 const rememberMe = document.getElementById('rememberMe');
 
-// URL da API que criamos no WordPress
+// URL da API
 const API_URL = 'https://steamverde.net/wp-json/steamverde/v1/launcher-login';
 
 // --- 3. LÓGICA DE LOGIN ---
@@ -38,7 +38,7 @@ loginForm.addEventListener('submit', async (e) => {
     const login = document.getElementById('username').value;
     const password = document.getElementById('password').value;
     
-    // Verifica se o elemento existe antes de pegar a propriedade checked para evitar erro
+    // Verifica se o elemento existe antes de pegar a propriedade checked
     const isRemember = rememberMe ? rememberMe.checked : false;
 
     try {
@@ -50,7 +50,7 @@ loginForm.addEventListener('submit', async (e) => {
             body: JSON.stringify({
                 login: login,
                 password: password,
-                remember: isRemember // Envia a opção para a API
+                remember: isRemember
             })
         });
 
@@ -62,13 +62,13 @@ loginForm.addEventListener('submit', async (e) => {
             loginBtn.style.background = '#a4d007'; // Verde Steam Verde
             
             setTimeout(() => {
-                // Envia o comando para o main.js fechar essa janela
+                // Envia o comando para o main.js fechar essa janela e abrir o site
                 ipcRenderer.send('login-success', {
-                    url: 'https://steamverde.net', // URL do site
+                    url: 'https://steamverde.net', 
                     cookieName: data.cookie_name,
                     cookieValue: data.cookie_value,
                     expirationDate: data.cookie_expiration,
-                    user_display_name: data.user_display_name // <--- ADICIONADO: Envia o nome para a barra
+                    user_display_name: data.user_display_name 
                 });
             }, 1000);
 
@@ -78,7 +78,18 @@ loginForm.addEventListener('submit', async (e) => {
         }
 
     } catch (error) {
-        errorMsg.textContent = error.message;
+        const msg = error.message.toLowerCase();
+        
+        // CORREÇÃO AQUI: Adicionei verificação para "vip" e "apenas"
+        if (msg.includes('assinante') || msg.includes('permissão') || msg.includes('vip') || msg.includes('apenas')) {
+             errorMsg.innerHTML = `
+                Acesso negado. Você precisa ser um assinante.<br>
+                <a href="#" onclick="require('electron').shell.openExternal('https://steamverde.net/assinante/')" style="color:#a4d007; font-weight:bold; cursor:pointer;">CLIQUE AQUI PARA ASSINAR</a>
+             `;
+        } else {
+             errorMsg.textContent = error.message;
+        }
+        
         errorMsg.style.display = 'block';
         loginBtn.disabled = false;
         loginBtn.textContent = 'ENTRAR NA CONTA';

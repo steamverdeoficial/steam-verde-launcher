@@ -11,7 +11,14 @@ let rdActiveDownload = null;
 const RD_API = 'https://api.real-debrid.com/rest/1.0';
 const CHROME_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
-const rdConfigPath = path.join(app.getPath('userData'), 'rd_config.json');
+// --- CORREÇÃO: RECRIA PASTA SE NÃO EXISTIR ---
+const userDataPath = app.getPath('userData');
+if (!fs.existsSync(userDataPath)) {
+    try { fs.mkdirSync(userDataPath, { recursive: true }); } catch(e){}
+}
+// ---------------------------------------------
+
+const rdConfigPath = path.join(userDataPath, 'rd_config.json');
 
 // Agente KeepAlive
 const agent = new https.Agent({  
@@ -128,7 +135,6 @@ class DownloadManager {
                     validateStatus: (status) => status < 400 
                 });
 
-                // BLINDAGEM CONTRA CORRUPÇÃO (200 vs 206)
                 if (isResume && response.status === 200) {
                     console.warn("[RD-MANAGER] Resume rejeitado (200 OK). Reiniciando para evitar corrupção.");
                     this.downloadedBytes = 0;
@@ -242,7 +248,6 @@ class DownloadManager {
 async function handleMagnet(magnetLink, win, downloadPath, callbacks) {
     if (!rdToken) return false;
 
-    // Recupera a imagem passada nos callbacks
     const gameImage = callbacks.gameImage || '';
 
     const choice = await dialog.showMessageBox(win, {
