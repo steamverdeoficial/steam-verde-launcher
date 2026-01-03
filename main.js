@@ -1,5 +1,5 @@
 // main.js
-const { app, BrowserWindow, ipcMain, session, shell, dialog, Notification } = require('electron'); 
+const { app, BrowserWindow, ipcMain, session, shell, dialog, Notification, screen } = require('electron'); 
 const path = require('path'); 
 const fs = require('fs'); 
 const DiscordRPC = require('discord-rpc'); 
@@ -8,27 +8,27 @@ const log = require('electron-log');
 const { execFile, spawn } = require('child_process');
 const sevenBin = require('7zip-bin');
 
-// --- MÓDULOS SEPARADOS ---
+// --- MÓDULOS ---
 const Styles = require('./src/styles');
 const Scripts = require('./src/scripts');
 const RD = require('./src/realdebrid');
 const Notifications = require('./src/notifications'); 
-const TorrentManager = require('./src/downloader'); 
+const TorrentManager = require('./src/downloader');
+const LocalAch = require('./src/achievements_local');
+const GameWatcher = require('./src/achievements_watcher');
 
-// --- CONFIGURAÇÃO ---
+// --- CONFIG ---
 let downloadPath = app.getPath('downloads'); 
 let torrentMgr = null; 
+let gameWatcher = null; 
 
-// Proteção para criar a pasta de dados caso não exista (evita tela cinza em instalação limpa)
 const userDataPath = app.getPath('userData');
 if (!fs.existsSync(userDataPath)) {
     try { fs.mkdirSync(userDataPath, { recursive: true }); } catch(e) {}
 }
 
-// Inicializa RD Token
 RD.loadToken();
 
-// DATABASE LOCAL
 const gamesDbPath = path.join(userDataPath, 'games.json');
 if (!fs.existsSync(gamesDbPath)) { fs.writeFileSync(gamesDbPath, JSON.stringify([])); }
 
@@ -49,7 +49,6 @@ if (process.platform === 'win32') {
 }
 
 // --- FUNÇÕES UTILITÁRIAS ---
-
 function getIconBase64() { 
     try { 
         const p = path.join(__dirname, 'assets', 'icon.ico'); 
@@ -71,13 +70,9 @@ function saveGameToDb(name, path, image) {
         const data = fs.readFileSync(gamesDbPath);
         const games = JSON.parse(data);
         if (!games.find(g => g.name === name)) {
-            games.push({ 
-                name: name, 
-                path: path, 
-                image: image || '', 
-                date: new Date().toISOString() 
-            });
+            games.push({ name: name, path: path, image: image || '', date: new Date().toISOString() });
             fs.writeFileSync(gamesDbPath, JSON.stringify(games));
+            if(siteWindow) LocalAch.incrementStat('downloads', siteWindow);
         }
     } catch (e) { console.error(e); }
 }
@@ -107,30 +102,48 @@ function updateSplashStatus(text, percent = null) {
     } 
 } 
 
-// --- JANELAS ---
+// --- OVERLAY DE CONQUISTAS (A MÁGICA) ---
+let overlayWindow = null;
 
-function createLoadingWindow() { 
-  loadingWindow = new BrowserWindow({ 
-    width: 600, height: 600, frame: false, transparent: true, alwaysOnTop: true, resizable: false, skipTaskbar: true,  
-    webPreferences: { nodeIntegration: false }, 
-    icon: path.join(__dirname, 'assets', 'icon.ico'), show: false 
-  }); 
-  loadingWindow.loadFile('loading.html'); 
-  loadingWindow.once('ready-to-show', () => { loadingWindow.show(); }); 
-} 
+function showAchievementOverlay(achievement) {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.workAreaSize; 
 
-function createLoginWindow() { 
-  loginWindow = new BrowserWindow({ 
-    width: 400, height: 600, title: 'Steam Verde Launcher', icon: path.join(__dirname, 'assets', 'icon.ico'), 
-    resizable: false, frame: false, transparent: true,  
-    webPreferences: { nodeIntegration: true, contextIsolation: false }, 
-    autoHideMenuBar: true, backgroundColor: '#00000000', show: false 
-  }); 
-  loginWindow.loadFile('login.html'); 
-  loginWindow.once('ready-to-show', () => { loginWindow.show(); if (loadingWindow) loadingWindow.close(); }); 
-  loginWindow.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; }); 
-} 
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+        overlayWindow.close();
+    }
 
+    overlayWindow = new BrowserWindow({
+        x: width - 350, 
+        y: height - 100, 
+        width: 340,
+        height: 100,
+        frame: false,
+        transparent: true, 
+        alwaysOnTop: true, 
+        skipTaskbar: true, 
+        focusable: false, 
+        resizable: false,
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false
+        }
+    });
+
+    overlayWindow.loadFile(path.join(__dirname, 'assets', 'overlay.html'));
+
+    overlayWindow.webContents.on('did-finish-load', () => {
+        overlayWindow.webContents.send('set-achievement', achievement);
+    });
+
+    setTimeout(() => {
+        if (overlayWindow && !overlayWindow.isDestroyed()) {
+            overlayWindow.close();
+        }
+    }, 6000);
+}
+
+// --- JANELA DE AVISOS (RECUPERADA) ---
 function createNoticeWindow(notice) {
     const win = new BrowserWindow({ 
         width: 500, height: 600, 
@@ -179,6 +192,152 @@ function createNoticeWindow(notice) {
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent));
 }
 
+// --- JANELA LISTA DE CONQUISTAS (ATUALIZADA E REATIVA) ---
+function createAchievementsWindow() {
+    const win = new BrowserWindow({ 
+        width: 900, height: 700, 
+        frame: false, transparent: false, backgroundColor: '#1b2838',
+        icon: path.join(__dirname, 'assets', 'icon.ico'),
+        webPreferences: { nodeIntegration: true, contextIsolation: false } // Precisa ser TRUE para o script funcionar
+    });
+
+    const localList = LocalAch.getList();
+    // Pega a lista inicial (pode conter "Carregando..." se não tiver cache)
+    const gameList = gameWatcher ? gameWatcher.getAllUnlocked() : [];
+
+    // --- HTML MISSÕES ---
+    let launcherHtml = '';
+    localList.forEach(ach => {
+        const cssClass = ach.unlocked ? 'mission-card unlocked' : 'mission-card locked';
+        launcherHtml += `
+            <div class="${cssClass}">
+                <div class="mission-icon">${ach.icon}</div>
+                <div class="info">
+                    <div class="ach-title">${ach.title}</div>
+                    <div class="ach-desc">${ach.desc}</div>
+                    <div class="ach-xp">+${ach.xp} XP</div>
+                </div>
+            </div>`;
+    });
+
+    // --- HTML JOGOS ---
+    let gamesHtml = '';
+    if(gameList.length === 0) {
+        gamesHtml = '<div style="grid-column:1/-1; text-align:center; color:#666; padding:20px;">Nenhuma conquista de jogo detectada ainda.</div>';
+    } else {
+        gameList.forEach(ach => {
+            // Importante: uniqueId para o JavaScript encontrar este elemento depois
+            const divId = `card-${ach.uniqueId}`; 
+            
+            gamesHtml += `
+            <div class="game-card unlocked" id="${divId}">
+                <div class="game-icon-wrapper">
+                    <img src="${ach.icon}" id="img-${ach.uniqueId}" onerror="this.src='https://cdn.cloudflare.steamstatic.com/steam/apps/${ach.appId}/capsule_184x69.jpg'">
+                </div>
+                <div class="info">
+                    <div class="ach-title" id="title-${ach.uniqueId}">${ach.title}</div>
+                    <div class="ach-desc" id="desc-${ach.uniqueId}">${ach.desc}</div>
+                    <div class="ach-game-name" id="game-${ach.uniqueId}">${ach.gameName}</div>
+                </div>
+            </div>`;
+        });
+    }
+
+    const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body { margin: 0; padding: 0; background: #121418; color: #c7d5e0; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; border: 1px solid #a4d007; box-sizing: border-box; }
+            .title-bar { height: 32px; background: #171a21; display: flex; justify-content: space-between; align-items: center; padding: 0 10px; -webkit-app-region: drag; border-bottom: 1px solid #333; }
+            .title { font-weight: bold; font-size: 13px; color: #a4d007; letter-spacing: 1px; display:flex; align-items:center; gap:10px; }
+            .close-btn { -webkit-app-region: no-drag; background: transparent; border: none; color: #8f98a0; cursor: pointer; font-size: 16px; padding: 0 15px; height: 100%; display: flex; align-items: center; transition: 0.2s; }
+            .close-btn:hover { background: #c21a1a; color: white; }
+            .content { flex: 1; padding: 20px; overflow-y: auto; }
+            .content::-webkit-scrollbar { width: 8px; }
+            .content::-webkit-scrollbar-track { background: #121418; }
+            .content::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+            h2 { color: #fff; border-bottom: 2px solid #333; padding-bottom: 10px; margin-top: 30px; font-size: 18px; }
+            h2:first-of-type { margin-top: 0; }
+            .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+            
+            .mission-card, .game-card { background: #1b1e24; border: 1px solid #333; border-radius: 6px; padding: 10px; display: flex; align-items: center; gap: 15px; transition: 0.2s; position: relative; overflow: hidden; }
+            .unlocked { border-color: #a4d007; background: linear-gradient(45deg, #1b1e24, #232830); }
+            .locked { opacity: 0.5; filter: grayscale(1); }
+            
+            /* Ícones */
+            .mission-icon { font-size: 24px; min-width: 40px; display:flex; justify-content:center; }
+            .game-card { height: 95px; }
+            .game-icon-wrapper { width: 64px; height: 64px; min-width: 64px; border-radius: 6px; overflow: hidden; background: #000; }
+            .game-icon-wrapper img { width: 100%; height: 100%; object-fit: cover; }
+
+            /* Textos */
+            .info { flex: 1; overflow: hidden; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+            .ach-title { font-weight: bold; color: #fff; font-size: 13px; margin-bottom: 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+            .ach-desc { color: #8f98a0; font-size: 11px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 4px; }
+            .ach-xp { font-size: 10px; color: #FFD700; font-weight: bold; margin-top: 5px; border: 1px solid #FFD700; display: inline-block; padding: 2px 6px; border-radius: 4px; }
+            .ach-game-name { font-size: 10px; color: #a4d007; font-weight: bold; text-transform: uppercase; margin-top: 2px; }
+        </style>
+    </head>
+    <body>
+        <div class="title-bar">
+            <span class="title">🏆 CONQUISTAS E TROFÉUS</span>
+            <button class="close-btn" onclick="window.close()">✕</button>
+        </div>
+        <div class="content">
+            <h2>MISSÕES STEAM VERDE</h2>
+            <div class="grid">${launcherHtml}</div>
+            <h2>TROFÉUS DE JOGOS (DESBLOQUEADOS)</h2>
+            <div class="grid">${gamesHtml}</div>
+        </div>
+
+        <script>
+            const { ipcRenderer } = require('electron');
+            
+            // OUVINTE MÁGICO: Atualiza a tela assim que a API responde
+            ipcRenderer.on('update-ach-ui', (event, data) => {
+                const uid = data.uniqueId;
+                
+                const titleEl = document.getElementById('title-' + uid);
+                const descEl = document.getElementById('desc-' + uid);
+                const imgEl = document.getElementById('img-' + uid);
+                const gameEl = document.getElementById('game-' + uid);
+
+                if (titleEl) titleEl.innerText = data.title;
+                if (descEl) descEl.innerText = data.desc;
+                if (gameEl) gameEl.innerText = data.gameName;
+                if (imgEl && data.icon) imgEl.src = data.icon;
+            });
+        </script>
+    </body>
+    </html>`;
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent));
+}
+
+// --- CRIAÇÃO DE JANELAS ---
+function createLoadingWindow() { 
+  loadingWindow = new BrowserWindow({ 
+    width: 600, height: 600, frame: false, transparent: true, alwaysOnTop: true, resizable: false, skipTaskbar: true,  
+    webPreferences: { nodeIntegration: false }, 
+    icon: path.join(__dirname, 'assets', 'icon.ico'), show: false 
+  }); 
+  loadingWindow.loadFile('loading.html'); 
+  loadingWindow.once('ready-to-show', () => { loadingWindow.show(); }); 
+} 
+
+function createLoginWindow() { 
+  loginWindow = new BrowserWindow({ 
+    width: 400, height: 600, title: 'Steam Verde Launcher', icon: path.join(__dirname, 'assets', 'icon.ico'), 
+    resizable: false, frame: false, transparent: true,  
+    webPreferences: { nodeIntegration: true, contextIsolation: false }, 
+    autoHideMenuBar: true, backgroundColor: '#00000000', show: false 
+  }); 
+  loginWindow.loadFile('login.html'); 
+  loginWindow.once('ready-to-show', () => { loginWindow.show(); if (loadingWindow) loadingWindow.close(); }); 
+  loginWindow.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; }); 
+} 
+
 function createSiteWindow(targetUrl) { 
   siteWindow = new BrowserWindow({ 
     width: 1280, height: 800, minWidth: 1024, title: 'Steam Verde', icon: path.join(__dirname, 'assets', 'icon.ico'), 
@@ -193,8 +352,12 @@ function createSiteWindow(targetUrl) {
     autoHideMenuBar: true, backgroundColor: '#1b2838', show: false 
   }); 
 
-  // --- INICIALIZA O GERENCIADOR DE TORRENTS ---
   torrentMgr = new TorrentManager(siteWindow, Notifications, RD);
+  
+  if (!gameWatcher) {
+      gameWatcher = new GameWatcher(siteWindow);
+      gameWatcher.start();
+  }
 
   siteWindow.webContents.setUserAgent(CHROME_USER_AGENT); 
   setupNetworkInterception(siteWindow.webContents.session); 
@@ -204,20 +367,18 @@ function createSiteWindow(targetUrl) {
     siteWindow.show(); siteWindow.maximize();  
     setDiscordActivity('Navegando na Biblioteca', 'Assinante VIP'); 
     if (loadingWindow && !loadingWindow.isDestroyed()) loadingWindow.close(); 
-    
-    // VERIFICAÇÃO AUTOMÁTICA DE AVISOS
     setTimeout(() => Notifications.checkNewNotices(siteWindow), 3000); 
-    setInterval(() => Notifications.checkNewNotices(siteWindow), 60000); 
+    setInterval(() => Notifications.checkNewNotices(siteWindow), 60000);
+    LocalAch.checkStartup(siteWindow);
+    setInterval(() => LocalAch.incrementStat('minutes_online', siteWindow), 60000);
   }); 
   siteWindow.on('closed', () => { app.quit(); }); 
 
-  // INJEÇÃO DE CSS/JS
   siteWindow.webContents.on('dom-ready', async () => { 
     try { 
         await siteWindow.webContents.insertCSS(Styles.TITLE_BAR_CSS); 
         await siteWindow.webContents.insertCSS(Styles.LOADING_CSS); 
         await siteWindow.webContents.insertCSS(Styles.CUSTOM_UI_CSS); 
-
         const iconBase64 = getIconBase64(); 
         await siteWindow.webContents.executeJavaScript(Scripts.INJECT_TITLEBAR_SCRIPT(currentUser.name, iconBase64, app.getVersion())); 
         await siteWindow.webContents.executeJavaScript(Scripts.INJECT_UI_SCRIPT); 
@@ -232,8 +393,7 @@ function createSiteWindow(targetUrl) {
    
   siteWindow.webContents.on('will-navigate', (event, url) => {  
       if (url.startsWith('magnet:') || url.endsWith('.torrent')) {  
-          event.preventDefault(); 
-          startTorrentDownload(url, '');
+          event.preventDefault(); startTorrentDownload(url, '');
           siteWindow.webContents.executeJavaScript(Scripts.HIDE_LOADER_SCRIPT).catch(() => {});  
       }  
   }); 
@@ -251,48 +411,27 @@ function createSiteWindow(targetUrl) {
 function setupNetworkInterception(sess) { 
     const filter = { urls: ['magnet:*', '*://*/*.torrent*'] }; 
     sess.webRequest.onBeforeRequest(filter, (details, callback) => { 
-        startTorrentDownload(details.url, '');
-        callback({ cancel: true }); 
+        startTorrentDownload(details.url, ''); callback({ cancel: true }); 
     }); 
 } 
 
-// --- LÓGICA DE INÍCIO DE DOWNLOAD ---
 async function startTorrentDownload(magnetLink, gameImage) {
     if (torrentMgr) {
-        // Tenta RD primeiro
         const rdHandled = await RD.handleMagnet(magnetLink, siteWindow, downloadPath, {
-            saveGameToDb,
-            formatBytes: (b) => torrentMgr.formatBytes(b),
-            gameImage 
+            saveGameToDb, formatBytes: (b) => torrentMgr.formatBytes(b), gameImage 
         });
-
         if(rdHandled) return; 
-
-        // Se não foi RD, vai para o TorrentManager
         torrentMgr.startDownload(magnetLink, downloadPath, gameImage, saveGameToDb);
     }
 }
 
-// --- IPC HANDLERS (COMUNICAÇÃO) ---
+// --- IPC HANDLERS ---
+ipcMain.on('nav-back', () => { if(siteWindow && siteWindow.webContents.canGoBack()) siteWindow.webContents.goBack(); });
+ipcMain.on('nav-forward', () => { if(siteWindow && siteWindow.webContents.canGoForward()) siteWindow.webContents.goForward(); });
 
-ipcMain.on('nav-back', () => {
-    if(siteWindow && siteWindow.webContents.canGoBack()) siteWindow.webContents.goBack();
-});
-ipcMain.on('nav-forward', () => {
-    if(siteWindow && siteWindow.webContents.canGoForward()) siteWindow.webContents.goForward();
-});
-
-// --- CORREÇÃO DO ERRO DE ARQUIVO EM USO ---
 ipcMain.on('launch-installer', (event, filePath) => { 
-    // 1. Tenta pausar o torrent (se estiver ativo) para soltar o arquivo
-    if (torrentMgr) {
-        torrentMgr.pauseByPath(filePath);
-    }
-    
-    // 2. Aguarda 500ms para o SO liberar o lock e executa
-    setTimeout(() => {
-        shell.openPath(filePath); 
-    }, 500);
+    if (torrentMgr) torrentMgr.pauseByPath(filePath);
+    setTimeout(() => { shell.openPath(filePath); }, 500);
 });
 
 ipcMain.on('torrent-pause', () => { if(torrentMgr) torrentMgr.togglePause(); });
@@ -343,9 +482,7 @@ ipcMain.on('extract-archive', (event, archivePath) => {
             }
             setupPath = findSetup(targetDir);
             event.reply('extract-done', { success: true, setup: setupPath, folder: targetDir });
-        } catch(e) {
-            event.reply('extract-done', { success: true, setup: null, folder: targetDir });
-        }
+        } catch(e) { event.reply('extract-done', { success: true, setup: null, folder: targetDir }); }
     });
 });
 
@@ -367,13 +504,24 @@ ipcMain.on('remove-game-from-db', (event, gameName) => {
     } catch (e) { console.error(e); }
 });
 ipcMain.on('open-game-folder', (event, folderPath) => { shell.openPath(folderPath); });
-ipcMain.on('rd-save-token', (e, token) => { RD.saveToken(token); });
+ipcMain.on('rd-save-token', (e, token) => { 
+    RD.saveToken(token); 
+    if(siteWindow) LocalAch.setStat('rd_linked', true, siteWindow);
+});
 ipcMain.on('rd-remove-token', () => RD.removeToken());
 ipcMain.on('get-notices', () => { if(siteWindow) Notifications.checkNewNotices(siteWindow); });
 ipcMain.on('mark-notice-read', (e, id) => { if(siteWindow) Notifications.markAsRead(id, siteWindow); });
 ipcMain.on('delete-notice', (e, id) => { if(siteWindow) Notifications.deleteNotice(id, siteWindow); });
-ipcMain.on('open-notice-window', (e, notice) => { createNoticeWindow(notice); });
+ipcMain.on('open-notice-window', (e, notice) => { createNoticeWindow(notice); }); // <--- AGORA ESTÁ DEFINIDO!
 ipcMain.on('console-log', (event, msg) => console.log("[RENDERER]", msg));
+
+// IPC CONQUISTAS
+ipcMain.on('open-achievements-window', () => { createAchievementsWindow(); });
+
+// IPC OVERLAY
+ipcMain.on('show-overlay', (event, ach) => {
+    showAchievementOverlay(ach);
+});
 
 app.whenReady().then(() => { 
   app.commandLine.appendSwitch('enable-gpu-rasterization'); 
@@ -396,13 +544,7 @@ autoUpdater.on('update-downloaded', () => {
         autoUpdater.quitAndInstall(); 
     } else if (siteWindow) {
         siteWindow.webContents.executeJavaScript(Scripts.SHOW_UPDATE_BTN_SCRIPT).catch(() => {});
-        Notifications.sendSystemNotification(
-            'Nova Atualização Pronta', 
-            'Clique para reiniciar e instalar.',
-            siteWindow, 
-            null,
-            () => autoUpdater.quitAndInstall()
-        );
+        Notifications.sendSystemNotification('Nova Atualização', 'Clique para instalar.', siteWindow, null, () => autoUpdater.quitAndInstall());
     } 
 });
 autoUpdater.on('download-progress', (p) => { if (loadingWindow) updateSplashStatus('Baixando: ' + Math.round(p.percent) + '%', Math.round(p.percent)); }); 
@@ -443,9 +585,5 @@ function initDiscordRPC() {
 } 
 function setDiscordActivity(details, state) { 
     if (!rpc) return; 
-    rpc.setActivity({ 
-        details: details, state: state, startTimestamp: Date.now(), 
-        largeImageKey: 'logo_steam', largeImageText: 'Steam Verde Launcher', 
-        instance: false, buttons: [{ label: 'Acessar Site', url: 'https://steamverde.net' }] 
-    }).catch(console.error); 
+    rpc.setActivity({ details: details, state: state, startTimestamp: Date.now(), largeImageKey: 'logo_steam', largeImageText: 'Steam Verde Launcher', instance: false, buttons: [{ label: 'Acessar Site', url: 'https://steamverde.net' }] }).catch(console.error); 
 }

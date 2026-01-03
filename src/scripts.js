@@ -3,62 +3,37 @@
 const INJECT_LOADER_DOM = `if (!document.getElementById('sv-launcher-loader')) { const loader = document.createElement('div'); loader.id = 'sv-launcher-loader'; loader.innerHTML = '<div class="sv-spinner"></div>'; document.body.appendChild(loader); }`; 
 
 const FIND_IMAGE_LOGIC = `
-    function svFindGameImage() {
-        window.ipc.log("[SV-DEBUG] Iniciando busca de imagem...");
-        let gameImg = '';
-        
-        const img1 = document.querySelector('.package-image img');
-        if (img1 && img1.src) return img1.src;
-
-        const link1 = document.querySelector('.package-image a');
-        if (link1 && link1.href && link1.href.match(/\\.(jpg|jpeg|png|webp)/i)) return link1.href;
-
-        const imgFluid = document.querySelector('.entry-content img.img-fluid');
-        if (imgFluid && imgFluid.src) return imgFluid.src;
-
-        const allImgs = document.querySelectorAll('.entry-content img');
-        let maxArea = 0;
-        let bestImg = '';
-        
-        allImgs.forEach(img => {
-            const area = img.width * img.height;
-            if (area > maxArea && img.width > 100) {
-                maxArea = area;
-                bestImg = img.src;
-            }
-        });
-        
-        if (bestImg) return bestImg;
-
-        const ogImg = document.querySelector('meta[property="og:image"]');
-        if (ogImg && ogImg.content) return ogImg.content;
-
-        return '';
-    }
+  function svFindGameImage() {
+      let gameImg = '';
+      const img1 = document.querySelector('.package-image img');
+      if (img1 && img1.src) return img1.src;
+      const link1 = document.querySelector('.package-image a');
+      if (link1 && link1.href && link1.href.match(/\\.(jpg|jpeg|png|webp)/i)) return link1.href;
+      const imgFluid = document.querySelector('.entry-content img.img-fluid');
+      if (imgFluid && imgFluid.src) return imgFluid.src;
+      const allImgs = document.querySelectorAll('.entry-content img');
+      let maxArea = 0; let bestImg = '';
+      allImgs.forEach(img => { const area = img.width * img.height; if (area > maxArea && img.width > 100) { maxArea = area; bestImg = img.src; } });
+      if (bestImg) return bestImg;
+      const ogImg = document.querySelector('meta[property="og:image"]');
+      if (ogImg && ogImg.content) return ogImg.content;
+      return '';
+  }
 `;
 
 const CLICK_LISTENER_SCRIPT = ` 
   ${FIND_IMAGE_LOGIC} 
-
   document.body.addEventListener('click', (e) => { 
     const link = e.target.closest('a'); 
-    
-    // Clique em Link Magnet/Torrent
     if (link && link.href && (link.href.startsWith('magnet:') || link.href.endsWith('.torrent'))) {
          e.preventDefault(); e.stopPropagation();
-         
-         window.ipc.log("[SV-DEBUG] Clique detectado no link!");
          const gameImg = svFindGameImage();
-         
          window.ipc.startTorrent(link.href, gameImg);
          return;
     }
-    
-    // Loader visual para navegação interna
     if (link && link.href) {
         if (link.href.includes('#') || link.href.startsWith('javascript:') || link.href === window.location.href) return; 
         if (!link.href.includes('steamverde.net')) return; 
-        
         const loader = document.getElementById('sv-launcher-loader'); 
         if (loader) { 
             loader.classList.add('visible'); 
@@ -75,8 +50,10 @@ const SHOW_UPDATE_BTN_SCRIPT = `const btn = document.getElementById('sv-update-b
 const INJECT_UI_SCRIPT = `
     ${FIND_IMAGE_LOGIC} 
     
+    // SISTEMA DE SOM
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playNotificationSound() {
+        if(audioCtx.state === 'suspended') audioCtx.resume();
         const oscillator = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
         oscillator.connect(gainNode);
@@ -90,26 +67,23 @@ const INJECT_UI_SCRIPT = `
         oscillator.stop(audioCtx.currentTime + 0.5);
     }
 
+    // BADGES
     window.ipc.onUpdateBadges((event, data) => {
         const hasUnread = data.hasUnread;
         const playSound = data.playSound;
-
         const badgeTop = document.getElementById('sv-news-badge');
         const menuItem = document.getElementById('sv-menu-avisos');
-        
         if (hasUnread) {
             if(badgeTop) badgeTop.style.display = 'block';
             if(menuItem) menuItem.classList.add('has-news');
-            
-            if(playSound) {
-                playNotificationSound();
-            }
+            if(playSound) playNotificationSound();
         } else {
             if(badgeTop) badgeTop.style.display = 'none';
             if(menuItem) menuItem.classList.remove('has-news');
         }
     });
 
+    // MENU LATERAL
     if (!document.getElementById('sv-side-menu')) {
         const overlay = document.createElement('div');
         overlay.id = 'sv-menu-overlay';
@@ -119,20 +93,17 @@ const INJECT_UI_SCRIPT = `
         const menu = document.createElement('div');
         menu.id = 'sv-side-menu';
         
-        const iconGames = '<svg viewBox="0 0 24 24"><defs><linearGradient id="gradGames" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#4facfe;stop-opacity:1" /><stop offset="100%" style="stop-color:#00f2fe;stop-opacity:1" /></linearGradient></defs><path fill="url(#gradGames)" d="M21,6H3A2,2 0 0,0 1,8V16A2,2 0 0,0 3,18H21A2,2 0 0,0 23,16V8A2,2 0 0,0 21,6M10,15H8V17H6V15H4V13H6V11H8V13H10V15M20,11H18V13H20V11M20,15H18V17H20V15M17,11H15V13H17V11M17,15H15V17H17V15Z"/></svg>';
-        
-        const iconNews = '<svg viewBox="0 0 24 24"><defs><linearGradient id="gradNews" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#f093fb;stop-opacity:1" /><stop offset="100%" style="stop-color:#f5576c;stop-opacity:1" /></linearGradient></defs><path fill="url(#gradNews)" d="M12 2C6.48 2 2 6.48 2 12S6.48 22 12 22 22 17.52 22 12 17.52 2 12 2M13 17H11V15H13V17M13 13H11V7H13V13Z"/></svg>';
-        
-        const iconTrophy = '<svg viewBox="0 0 24 24"><defs><linearGradient id="gradTrophy" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" style="stop-color:#FFD700;stop-opacity:1" /><stop offset="100%" style="stop-color:#FDB931;stop-opacity:1" /></linearGradient></defs><path fill="url(#gradTrophy)" d="M19 5H17C17 3.9 16.1 3 15 3H9C7.9 3 7 3.9 7 5H5C3.9 5 3 5.9 3 7V8C3 10.8 5.2 13 8 13.5V15C8 16.1 8.9 17 10 17H14C15.1 17 16 16.1 16 15V13.5C18.8 13 21 10.8 21 8V7C21 5.9 20.1 5 19 5M5 8V7H7V8C7 9.1 6.1 10 5 10C5 10 5 10 5 10V8M19 8V10C19 10 19 10 19 10C17.9 10 17 9.1 17 8V7H19V8M12 18C10.9 18 10 18.9 10 20H14C14 18.9 13.1 18 12 18Z"/></svg>';
+        const iconGames = '<svg viewBox="0 0 24 24"><path style="fill:url(#gradGames)" d="M21,6H3A2,2 0 0,0 1,8V16A2,2 0 0,0 3,18H21A2,2 0 0,0 23,16V8A2,2 0 0,0 21,6M10,15H8V17H6V15H4V13H6V11H8V13H10V15M20,11H18V13H20V11M20,15H18V17H20V15M17,11H15V13H17V11M17,15H15V17H17V15Z"/><defs><linearGradient id="gradGames" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#4facfe;stop-opacity:1" /><stop offset="100%" style="stop-color:#00f2fe;stop-opacity:1" /></linearGradient></defs></svg>';
+        const iconNews = '<svg viewBox="0 0 24 24"><path style="fill:url(#gradNews)" d="M12 2C6.48 2 2 6.48 2 12S6.48 22 12 22 22 17.52 22 12 17.52 2 12 2M13 17H11V15H13V17M13 13H11V7H13V13Z"/><defs><linearGradient id="gradNews" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#f093fb;stop-opacity:1" /><stop offset="100%" style="stop-color:#f5576c;stop-opacity:1" /></linearGradient></defs></svg>';
+        const iconTrophy = '<svg viewBox="0 0 24 24"><path style="fill:url(#gradTrophy)" d="M19 5H17C17 3.9 16.1 3 15 3H9C7.9 3 7 3.9 7 5H5C3.9 5 3 5.9 3 7V8C3 10.8 5.2 13 8 13.5V15C8 16.1 8.9 17 10 17H14C15.1 17 16 16.1 16 15V13.5C18.8 13 21 10.8 21 8V7C21 5.9 20.1 5 19 5M5 8V7H7V8C7 9.1 6.1 10 5 10C5 10 5 10 5 10V8M19 8V10C19 10 19 10 19 10C17.9 10 17 9.1 17 8V7H19V8M12 18C10.9 18 10 18.9 10 20H14C14 18.9 13.1 18 12 18Z"/><defs><linearGradient id="gradTrophy" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" style="stop-color:#FFD700;stop-opacity:1" /><stop offset="100%" style="stop-color:#FDB931;stop-opacity:1" /></linearGradient></defs></svg>';
         
         menu.innerHTML = \`
             <a class="sv-menu-item" onclick="window.ipc.openMyGames()">\${iconGames} Meus Jogos</a>
             <div class="sv-menu-divider"></div>
             <a class="sv-menu-item" id="sv-menu-avisos" onclick="window.ipc.openNotices()">\${iconNews} Avisos e Novidades</a>
-            <a class="sv-menu-item" style="opacity:0.5; cursor:default">\${iconTrophy} Conquistas (Em breve)</a>
+            <a class="sv-menu-item" onclick="window.ipc.openAchievements()">\${iconTrophy} Conquistas</a>
             <div class="sv-menu-divider"></div>
             <a class="sv-menu-item" onclick="window.ipc.openRD()"><svg viewBox="0 0 24 24" style="fill:#a4d007"><path d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3M19 19H5V5H19V19M10 17L15 12L10 7V17Z"/></svg> Real-Debrid</a>
-            
             <div style="flex:1"></div> <a class="sv-menu-item" onclick="window.debugClearData()" style="color:#ff4d4d; border-top:1px solid #282c34; padding-top:20px; padding-bottom:20px">
                <svg viewBox="0 0 24 24" style="fill:#ff4d4d"><path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z" /></svg>
                Limpar Dados / Debug
@@ -140,14 +111,19 @@ const INJECT_UI_SCRIPT = `
         \`;
         document.body.appendChild(menu);
 
-        // FUNÇÃO DE CONFIRMAÇÃO DE DEBUG
         window.debugClearData = function() {
-            if(confirm("ATENÇÃO: Isso limpará TODOS os dados do Launcher (Login, Jogos Salvos, Configurações) para resolver bugs.\\n\\nO Launcher será reiniciado e você precisará fazer login novamente.\\n\\nDeseja continuar?")) {
-                window.ipc.clearDataAndRestart();
-            }
+            if(confirm("ATENÇÃO: Isso limpará TODOS os dados do Launcher.")) { window.ipc.clearDataAndRestart(); }
         };
     }
 
+    // LISTENER DE CONQUISTAS (Apenas lógica, sem HTML injetado)
+    // Quando recebe o desbloqueio, toca o som e manda abrir o Overlay Nativo
+    window.ipc.onAchievementUnlock((event, ach) => {
+        playNotificationSound();
+        window.ipc.showOverlay(ach);
+    });
+
+    // MINHA BIBLIOTECA
     if (!document.getElementById('sv-mygames-modal')) {
         const modal = document.createElement('div');
         modal.id = 'sv-mygames-modal';
@@ -163,6 +139,7 @@ const INJECT_UI_SCRIPT = `
         document.body.appendChild(modal);
     }
 
+    // AVISOS
     if (!document.getElementById('sv-notices-modal')) {
         const modal = document.createElement('div');
         modal.id = 'sv-notices-modal';
@@ -182,14 +159,11 @@ const INJECT_UI_SCRIPT = `
             if(!list) return;
             const notices = data.notices;
             const readIds = data.readIds;
-
             if(notices.length === 0) {
                 list.innerHTML = '<div style="text-align:center; padding:40px; color:#8f98a0">Nenhum aviso no momento.</div>';
                 return;
             }
-
             list.innerHTML = '';
-            
             window.svOpenNotice = function(index) {
                 const noticeData = notices[index];
                 if(noticeData) {
@@ -197,16 +171,12 @@ const INJECT_UI_SCRIPT = `
                    window.ipc.markNoticeRead(noticeData.id); 
                 }
             };
-
             notices.forEach((notice, index) => {
                 const isRead = readIds.includes(notice.id);
                 const item = document.createElement('div');
                 item.className = isRead ? 'sv-notice-item' : 'sv-notice-item unread';
-                
                 const openBtn = \`<button class="sv-notice-btn" style="border-color:#a4d007; color:#a4d007" onclick="window.svOpenNotice(\${index})">ABRIR / LER</button>\`;
-                
                 const shortContent = notice.content.replace(/<[^>]*>?/gm, '').substring(0, 100) + '...';
-
                 item.innerHTML = \`
                     <div class="sv-notice-header">
                         <span class="sv-notice-title">\${notice.title} \${!isRead ? '<span style="color:#a4d007; font-size:10px; margin-left:5px">[NOVO]</span>' : ''}</span>
@@ -223,6 +193,7 @@ const INJECT_UI_SCRIPT = `
         });
     }
 
+    // REAL-DEBRID
     if (!document.getElementById('sv-rd-modal')) {
         const modal = document.createElement('div');
         modal.id = 'sv-rd-modal';
@@ -259,17 +230,15 @@ const INJECT_UI_SCRIPT = `
         };
     }
 
+    // BOTÃO FLUTUANTE
     if (!document.getElementById('sv-float-dl-btn')) {
         const btn = document.createElement('div');
         btn.id = 'sv-float-dl-btn';
         btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z" /></svg> DOWNLOAD VIA LAUNCHER';
-        
         btn.onclick = function() {
             if(this.classList.contains('install-mode')) return;
-
             const mag = document.querySelector('a[href^="magnet:"]');
             if(mag) {
-                window.ipc.log("[SV-DEBUG] Botão flutuante clicado. Buscando imagem...");
                 const gameImg = svFindGameImage(); 
                 window.ipc.startTorrent(mag.href, gameImg);
             }
@@ -277,6 +246,7 @@ const INJECT_UI_SCRIPT = `
         document.body.appendChild(btn);
     }
 
+    // BARRA DE DOWNLOAD
     if (!document.getElementById('sv-download-bar')) {
         const bar = document.createElement('div');
         bar.id = 'sv-download-bar';
@@ -338,7 +308,6 @@ const INJECT_UI_SCRIPT = `
             const container = document.getElementById('sv-dl-tabs');
             if(!container) return;
             container.innerHTML = '';
-            
             tabs.forEach(tab => {
                 const el = document.createElement('div');
                 el.className = tab.active ? 'sv-dl-tab active' : 'sv-dl-tab';
@@ -353,9 +322,7 @@ const INJECT_UI_SCRIPT = `
         const tab = document.createElement('div');
         tab.id = 'sv-toggle-tab';
         tab.innerHTML = '<svg viewBox="0 0 24 24"><path d="M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z" /></svg>';
-        tab.onclick = function() {
-            window.ipc.toggleDownloadBar();
-        };
+        tab.onclick = function() { window.ipc.toggleDownloadBar(); };
         document.body.appendChild(tab);
     }
 
@@ -377,7 +344,6 @@ const INJECT_UI_SCRIPT = `
         const btn = document.getElementById('sv-float-dl-btn');
         const bar = document.getElementById('sv-download-bar');
         const tab = document.getElementById('sv-toggle-tab');
-
         if(btn) {
             if(btn.classList.contains('install-mode')) {
                 btn.style.display = 'flex';
@@ -385,7 +351,6 @@ const INJECT_UI_SCRIPT = `
                 const shouldShow = mag ? 'flex' : 'none';
                 if(btn.style.display !== shouldShow) btn.style.display = shouldShow;
             }
-            
             if(bar && bar.classList.contains('visible')) {
                 if(!btn.classList.contains('pushed-up')) btn.classList.add('pushed-up');
                 if(!tab.classList.contains('raised')) tab.classList.add('raised');
@@ -410,14 +375,8 @@ const INJECT_TITLEBAR_SCRIPT = (userName, iconBase64, appVersion) => `
              <svg viewBox="0 0 24 24"><path d="M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z" /></svg>
              <div id="sv-news-badge"></div>
           </div>
-          
-          <button class="sv-nav-btn" onclick="window.svNav('back')" title="Voltar">
-             <svg viewBox="0 0 24 24"><path d="M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z" /></svg>
-          </button>
-          <button class="sv-nav-btn" onclick="window.svNav('forward')" title="Avançar">
-             <svg viewBox="0 0 24 24"><path d="M4,11V13H16L10.5,18.5L11.92,19.92L19.84,12L11.92,4.08L10.5,5.5L16,11H4Z" /></svg>
-          </button>
-
+          <button class="sv-nav-btn" onclick="window.svNav('back')" title="Voltar"><svg viewBox="0 0 24 24"><path d="M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z" /></svg></button>
+          <button class="sv-nav-btn" onclick="window.svNav('forward')" title="Avançar"><svg viewBox="0 0 24 24"><path d="M4,11V13H16L10.5,18.5L11.92,19.92L19.84,12L11.92,4.08L10.5,5.5L16,11H4Z" /></svg></button>
           <img src="${iconBase64}" class="sv-app-icon" style="margin-left:10px"> 
           <div class="sv-bar-logo" id="sv-app-title">STEAM VERDE</div> 
       </div> 
@@ -443,7 +402,6 @@ const INJECT_TITLEBAR_SCRIPT = (userName, iconBase64, appVersion) => `
     window.svNav = function(direction) {
         const loader = document.getElementById('sv-launcher-loader'); 
         if (loader) loader.classList.add('visible');
-        
         if (direction === 'back') window.ipc.goBack();
         else window.ipc.goForward();
     };

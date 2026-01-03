@@ -24,6 +24,23 @@ contextBridge.exposeInMainWorld('ipc', {
     switchTab: (infoHash) => ipcRenderer.send('switch-download-tab', infoHash),
     onUpdateTabs: (callback) => ipcRenderer.on('update-download-tabs', callback),
     
+    // --- ATUALIZADO: CONQUISTAS ---
+openAchievements: () => {
+        ipcRenderer.send('open-achievements-window');
+        const menu = document.getElementById('sv-side-menu');
+        const overlay = document.getElementById('sv-menu-overlay');
+        if(menu) menu.classList.remove('open');
+        if(overlay) overlay.classList.remove('visible');
+    },
+    
+    // NOVO: Chama o Overlay flutuante
+    showOverlay: (ach) => {
+        ipcRenderer.send('show-overlay', ach);
+    },
+    
+    onAchievementUnlock: (callback) => ipcRenderer.on('achievement-unlocked', callback),
+    // -----------------------------
+
     toggleFilesModal: () => {
         const modal = document.getElementById('sv-files-modal');
         if(modal) {
@@ -113,9 +130,7 @@ contextBridge.exposeInMainWorld('ipc', {
         const modal = document.getElementById('sv-mygames-modal');
         if(modal) modal.style.display = 'none';
     },
-    // Função para ABRIR PASTA
     openGameFolder: (path) => ipcRenderer.send('open-game-folder', path),
-    // Função para EXECUTAR ARQUIVO
     launchInstaller: (path) => ipcRenderer.send('launch-installer', path),
     
     removeGame: (name) => {
@@ -125,7 +140,6 @@ contextBridge.exposeInMainWorld('ipc', {
     }
 });
 
-// LISTENERS
 ipcRenderer.on('install-ready', (event, path) => {
     installPath = path; 
     const btn = document.getElementById('sv-float-dl-btn');
@@ -215,7 +229,6 @@ ipcRenderer.on('my-games-list', (event, games) => {
             }
         } catch(e) {}
         
-        // PULO DO GATO: Garante que o setupPath aponte para o ARQUIVO .EXE
         const setupPath = hasSetup ? path.join(game.path, setupFile).replace(/\\/g, '/') : '';
         
         const item = document.createElement('div');

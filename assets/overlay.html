@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            margin: 0; padding: 0;
+            background: transparent;
+            overflow: hidden;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end; /* Alinha à direita */
+            height: 100vh;
+            padding-right: 20px;
+        }
+
+        /* O Card da Notificação */
+        .toast {
+            background: rgba(23, 26, 33, 0.95); /* Fundo escuro quase opaco */
+            border-left: 4px solid #FFD700; /* Borda Dourada */
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            box-shadow: 0 5px 25px rgba(0,0,0,0.8);
+            border-radius: 4px;
+            width: 320px;
+            color: #fff;
+            animation: slideIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            backdrop-filter: blur(5px); /* Efeito de vidro */
+        }
+
+        .icon {
+            font-size: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 50px;
+            height: 50px;
+        }
+        
+        .icon img {
+            width: 45px; height: 45px;
+            border-radius: 4px;
+            object-fit: cover;
+            border: 1px solid #FFD700;
+        }
+
+        .content { flex: 1; overflow: hidden; }
+        
+        .title {
+            font-weight: bold;
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 4px;
+            text-shadow: 0 1px 2px rgba(0,0,0,1);
+        }
+
+        .subtitle {
+            color: #FFD700;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: bold;
+        }
+
+        /* Animação de entrada */
+        @keyframes slideIn {
+            from { transform: translateX(120%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="toast" id="toast-card">
+        <div class="icon" id="ach-icon">🏆</div>
+        <div class="content">
+            <div class="subtitle" id="ach-sub">CONQUISTA DESBLOQUEADA</div>
+            <div class="title" id="ach-title">Título da Conquista</div>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        
+        // Recebe os dados do main.js
+        ipcRenderer.on('set-achievement', (event, ach) => {
+            document.getElementById('ach-title').innerText = ach.title;
+            const sub = document.getElementById('ach-sub');
+            const iconContainer = document.getElementById('ach-icon');
+
+            sub.innerText = ach.isGame ? 'JOGO DESBLOQUEADO' : 'STEAM VERDE';
+
+            if (ach.icon && (ach.icon.includes('http') || ach.icon.startsWith('data:'))) {
+                iconContainer.innerHTML = `<img src="${ach.icon}">`;
+            } else {
+                iconContainer.innerText = ach.icon || '🏆';
+            }
+        });
+    </script>
+</body>
+</html>

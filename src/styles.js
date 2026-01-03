@@ -64,6 +64,70 @@ const CUSTOM_UI_CSS = `
   #sv-menu-overlay { position: fixed; top: 32px; left: 0; width: 100%; height: calc(100% - 32px); background: rgba(0,0,0,0.5); z-index: 2147483646; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
   #sv-menu-overlay.visible { opacity: 1; pointer-events: auto; }
 
+  /* CONQUISTAS MODAL */
+  #sv-achievements-modal { 
+      position: fixed; 
+      top: 100px; 
+      left: calc(50% - 350px);
+      width: 700px; 
+      height: 500px; 
+      border: 1px solid #FFD700; 
+      background: #121418; 
+      z-index: 2147483647 !important; 
+      box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+  }
+  .sv-achievements-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; padding: 10px; }
+  
+  .sv-achievement-card { 
+      background: #171a21; border: 1px solid #333; border-radius: 6px; padding: 10px; 
+      display: flex; align-items: center; gap: 0; transition: 0.2s; position: relative; overflow: hidden;
+      height: 80px; /* Altura fixa para o cartão não estourar */
+  }
+  
+  .sv-achievement-card.locked { opacity: 0.5; filter: grayscale(1); }
+  .sv-achievement-card.unlocked { border-color: #FFD700; background: linear-gradient(45deg, #171a21, #1f232b); }
+  .sv-achievement-card.unlocked::after {
+      content: '✔'; position: absolute; top: 5px; right: 10px; color: #FFD700; font-size: 16px; font-weight: bold;
+  }
+
+  /* === GOLPE FINAL NOS ÍCONES GIGANTES === */
+  /* Travamos o Flexbox e forçamos os limites */
+  #sv-achievements-modal .sv-achievement-card img,
+  #sv-achievements-modal img,
+  .sv-ach-icon img,
+  .sv-ach-icon {
+      width: 64px !important;
+      height: 64px !important;
+      min-width: 64px !important;
+      max-width: 64px !important;
+      object-fit: cover !important;
+      flex: 0 0 64px !important; /* ESSE É O SEGREDO DO FLEXBOX */
+      border-radius: 6px !important;
+      margin-right: 15px !important;
+      display: block !important;
+  }
+  /* ======================================= */
+
+  .sv-ach-info { flex: 1; overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
+  .sv-ach-title { font-weight: bold; color: #fff; font-size: 13px; margin-bottom: 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sv-ach-desc { color: #8f98a0; font-size: 11px; line-height:1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .sv-ach-xp { font-size: 10px; color: #FFD700; font-weight: bold; margin-top: 5px; border: 1px solid #FFD700; display: inline-block; padding: 2px 6px; border-radius: 4px; width: fit-content; }
+
+  /* TOAST DE CONQUISTA */
+  #sv-ach-toast {
+      position: fixed; bottom: 20px; right: -400px; width: 320px;
+      background: #171a21; border-left: 4px solid #FFD700;
+      padding: 15px; display: flex; align-items: center; gap: 15px;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.8); z-index: 2147483650;
+      transition: right 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      border-radius: 4px; pointer-events: none;
+  }
+  #sv-ach-toast.show { right: 20px; }
+  .sv-toast-icon { font-size: 30px; animation: sv-bounce 1s infinite; display: flex; align-items: center; }
+  .sv-toast-text { color: #fff; font-weight: bold; font-size: 14px; }
+  .sv-toast-sub { color: #FFD700; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px; }
+  @keyframes sv-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+
   /* BOTÃO FLUTUANTE */
   #sv-float-dl-btn { position: fixed; bottom: 25px; right: 100px; background: linear-gradient(90deg, #a4d007 0%, #46bd14 100%); color: #fff; padding: 14px 28px; border-radius: 40px; font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 14px; box-shadow: 0 0 20px rgba(164, 208, 7, 0.4); cursor: pointer; z-index: 2147483645; display: none; align-items: center; gap: 12px; transition: bottom 0.5s cubic-bezier(0.22, 1, 0.36, 1), transform 0.2s ease, box-shadow 0.2s ease; border: 2px solid rgba(255,255,255,0.1); letter-spacing: 0.5px; }
   #sv-float-dl-btn.pushed-up { bottom: 140px !important; }
@@ -149,10 +213,19 @@ const CUSTOM_UI_CSS = `
   .sv-prio-btn.active { color: #ffcc00 !important; filter: drop-shadow(0 0 5px rgba(255, 204, 0, 0.8)); transform: scale(1.1); }
   
   /* MODAL */
-  #sv-files-modal, #sv-mygames-modal, #sv-rd-modal, #sv-notices-modal { position: fixed; bottom: 120px; right: 30px; width: 500px; max-height: 400px; background: #1b2838; border: 1px solid #46bd14; border-radius: 10px; display: none; flex-direction: column; z-index: 2147483647 !important; box-shadow: 0 20px 50px rgba(0,0,0,1); overflow: hidden; }
-  #sv-mygames-modal, #sv-rd-modal, #sv-notices-modal { top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 500px; bottom: auto; right: auto; max-height: none; }
+  #sv-files-modal, #sv-mygames-modal, #sv-rd-modal, #sv-notices-modal, #sv-achievements-modal { position: fixed; bottom: 120px; right: 30px; width: 500px; max-height: 400px; background: #1b2838; border: 1px solid #46bd14; border-radius: 10px; display: none; flex-direction: column; z-index: 2147483647 !important; box-shadow: 0 20px 50px rgba(0,0,0,1); overflow: hidden; }
+  #sv-mygames-modal, #sv-rd-modal, #sv-notices-modal, #sv-achievements-modal { top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 500px; bottom: auto; right: auto; max-height: none; }
   #sv-rd-modal { width: 500px; height: auto; min-height: 300px; border-color: #ffcc00; }
-  .sv-modal-header { color:#fff; padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; background: #171a21; }
+  .sv-modal-header { 
+      color:#fff; 
+      padding:15px; 
+      border-bottom:1px solid #333; 
+      display:flex; 
+      justify-content:space-between; 
+      background: #171a21; 
+      cursor: move; /* Indica que é arrastável */
+      user-select: none; /* Impede selecionar texto ao arrastar */
+  }
   .sv-modal-body { overflow-y: auto; flex: 1; padding: 10px; }
   .sv-modal-body::-webkit-scrollbar { width: 8px; } .sv-modal-body::-webkit-scrollbar-track { background: #171a21; } .sv-modal-body::-webkit-scrollbar-thumb { background: #323f55; border-radius: 4px; } .sv-modal-body::-webkit-scrollbar-thumb:hover { background: #a4d007; }
 
