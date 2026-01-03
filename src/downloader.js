@@ -40,26 +40,37 @@ class TorrentManager {
         const target = path.normalize(targetPath).toLowerCase();
         
         this.downloads.forEach((data, hash) => {
-            // Caminho base do download
             const torrentPath = path.join(data.savePath, data.name);
             const normalizedTorrent = path.normalize(torrentPath).toLowerCase();
 
-            // Se o arquivo alvo está DENTRO da pasta deste torrent
+            // Verifica se o arquivo alvo pertence a este torrent
             if (target.includes(normalizedTorrent)) {
-                if (!data.isManualPause) {
-                    console.log(`[TorrentManager] Pausando seed para liberar arquivo: ${data.name}`);
-                    data.isManualPause = true;
-                    data.torrent.pause();
-                    // Deselecionar arquivos ajuda a soltar o handle do disco
-                    data.torrent.files.forEach(file => file.deselect());
-                    data.torrent.deselect(0, data.torrent.pieces.length - 1, false);
-                    this.updateProgress(hash);
+                console.log(`[TorrentManager] Liberando arquivo para instalação: ${data.name}`);
+                
+                // Opção A: Destruir (Garante 100% que solta o arquivo, mas para o Seed)
+                // Recomendado para evitar o erro "Arquivo em uso"
+                data.torrent.destroy(); 
+                this.downloads.delete(hash);
+                
+                // Atualiza a UI para mostrar que parou
+                if (this.win && !this.win.isDestroyed()) {
+                     this.win.webContents.send('torrent-progress', {
+                        name: data.name,
+                        progress: "100.0",
+                        speed: "INSTALANDO...",
+                        peers: 0,
+                        eta: "Concluído",
+                        paused: true,
+                        chart: new Array(150).fill(0),
+                        peersChart: new Array(150).fill(0)
+                    });
                 }
             }
         });
     }
 
     startDownload(magnetLink, savePath, gameImage, saveDbCallback) {
+        // ... (código inicial igual) ...
         this.win.webContents.executeJavaScript(`
             localStorage.setItem('sv-bar-collapsed', 'false');
             document.getElementById('sv-download-bar').classList.add('visible');
@@ -101,12 +112,15 @@ class TorrentManager {
         }, 1000);
 
         torrent.on('done', () => {
-            this.Notifs.sendSystemNotification('Download Concluído!', `O jogo ${torrent.name} foi finalizado.`, this.win);
+            this.Notifs.sendSystemNotification('Download Concluído!', `O jogo ${torrent.name} está pronto para instalar.`, this.win);
             saveDbCallback(torrent.name, path.join(savePath, torrent.name), gameImage);
             this.updateProgress(torrent.infoHash);
             
             const fullPath = path.join(savePath, torrent.name);
             this.findSetupAndNotify(fullPath);
+            
+            // ATENÇÃO: Não destruímos aqui automaticamente para permitir seed.
+            // A destruição ocorrerá apenas quando o usuário clicar em "INSTALAR".
         });
     }
 

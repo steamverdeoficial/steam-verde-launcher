@@ -192,30 +192,51 @@ function createNoticeWindow(notice) {
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent));
 }
 
-// --- JANELA LISTA DE CONQUISTAS (ATUALIZADA E REATIVA) ---
+// --- JANELA LISTA DE CONQUISTAS (COM BARRA DE PROGRESSO) ---
 function createAchievementsWindow() {
     const win = new BrowserWindow({ 
         width: 900, height: 700, 
         frame: false, transparent: false, backgroundColor: '#1b2838',
         icon: path.join(__dirname, 'assets', 'icon.ico'),
-        webPreferences: { nodeIntegration: true, contextIsolation: false } // Precisa ser TRUE para o script funcionar
+        webPreferences: { nodeIntegration: true, contextIsolation: false }
     });
 
     const localList = LocalAch.getList();
-    // Pega a lista inicial (pode conter "Carregando..." se não tiver cache)
     const gameList = gameWatcher ? gameWatcher.getAllUnlocked() : [];
 
     // --- HTML MISSÕES ---
     let launcherHtml = '';
     localList.forEach(ach => {
         const cssClass = ach.unlocked ? 'mission-card unlocked' : 'mission-card locked';
+        
+        // LÓGICA DO RODAPÉ (XP vs PROGRESSO)
+        let footerHtml = '';
+        if (ach.unlocked) {
+            // Se já ganhou, mostra o XP dourado
+            footerHtml = `<div class="ach-xp">+${ach.xp} XP</div>`;
+        } else if (ach.progress) {
+            // Se está em andamento, mostra BARRA
+            const pct = Math.min(100, (ach.progress.cur / ach.progress.max) * 100);
+            footerHtml = `
+                <div class="ach-prog-wrapper">
+                    <div class="ach-prog-text">${ach.progress.cur} / ${ach.progress.max} ${ach.progress.label}</div>
+                    <div class="ach-prog-bar">
+                        <div class="ach-prog-fill" style="width: ${pct}%"></div>
+                    </div>
+                </div>
+            `;
+        } else {
+            // Se é missão sem contagem (ex: entrar de madrugada), mostra XP cinza
+            footerHtml = `<div class="ach-xp locked-xp">+${ach.xp} XP</div>`;
+        }
+
         launcherHtml += `
             <div class="${cssClass}">
                 <div class="mission-icon">${ach.icon}</div>
                 <div class="info">
                     <div class="ach-title">${ach.title}</div>
                     <div class="ach-desc">${ach.desc}</div>
-                    <div class="ach-xp">+${ach.xp} XP</div>
+                    ${footerHtml}
                 </div>
             </div>`;
     });
@@ -226,9 +247,7 @@ function createAchievementsWindow() {
         gamesHtml = '<div style="grid-column:1/-1; text-align:center; color:#666; padding:20px;">Nenhuma conquista de jogo detectada ainda.</div>';
     } else {
         gameList.forEach(ach => {
-            // Importante: uniqueId para o JavaScript encontrar este elemento depois
             const divId = `card-${ach.uniqueId}`; 
-            
             gamesHtml += `
             <div class="game-card unlocked" id="${divId}">
                 <div class="game-icon-wrapper">
@@ -266,18 +285,25 @@ function createAchievementsWindow() {
             .unlocked { border-color: #a4d007; background: linear-gradient(45deg, #1b1e24, #232830); }
             .locked { opacity: 0.5; filter: grayscale(1); }
             
-            /* Ícones */
             .mission-icon { font-size: 24px; min-width: 40px; display:flex; justify-content:center; }
             .game-card { height: 95px; }
             .game-icon-wrapper { width: 64px; height: 64px; min-width: 64px; border-radius: 6px; overflow: hidden; background: #000; }
             .game-icon-wrapper img { width: 100%; height: 100%; object-fit: cover; }
 
-            /* Textos */
             .info { flex: 1; overflow: hidden; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
             .ach-title { font-weight: bold; color: #fff; font-size: 13px; margin-bottom: 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-            .ach-desc { color: #8f98a0; font-size: 11px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 4px; }
-            .ach-xp { font-size: 10px; color: #FFD700; font-weight: bold; margin-top: 5px; border: 1px solid #FFD700; display: inline-block; padding: 2px 6px; border-radius: 4px; }
+            .ach-desc { color: #8f98a0; font-size: 11px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 6px; }
+            
+            /* XP e Progresso */
+            .ach-xp { font-size: 10px; color: #FFD700; font-weight: bold; border: 1px solid #FFD700; display: inline-block; padding: 2px 6px; border-radius: 4px; }
+            .locked-xp { color: #666; border-color: #444; }
             .ach-game-name { font-size: 10px; color: #a4d007; font-weight: bold; text-transform: uppercase; margin-top: 2px; }
+
+            /* ESTILOS DA BARRA DE PROGRESSO */
+            .ach-prog-wrapper { width: 100%; display: flex; flex-direction: column; gap: 3px; }
+            .ach-prog-text { font-size: 10px; color: #a4d007; font-weight: bold; text-align: right; }
+            .ach-prog-bar { width: 100%; height: 6px; background: #333; border-radius: 3px; overflow: hidden; }
+            .ach-prog-fill { height: 100%; background: linear-gradient(90deg, #a4d007, #d4ff33); box-shadow: 0 0 5px rgba(164,208,7,0.5); }
         </style>
     </head>
     <body>
@@ -291,19 +317,14 @@ function createAchievementsWindow() {
             <h2>TROFÉUS DE JOGOS (DESBLOQUEADOS)</h2>
             <div class="grid">${gamesHtml}</div>
         </div>
-
         <script>
             const { ipcRenderer } = require('electron');
-            
-            // OUVINTE MÁGICO: Atualiza a tela assim que a API responde
             ipcRenderer.on('update-ach-ui', (event, data) => {
                 const uid = data.uniqueId;
-                
                 const titleEl = document.getElementById('title-' + uid);
                 const descEl = document.getElementById('desc-' + uid);
                 const imgEl = document.getElementById('img-' + uid);
                 const gameEl = document.getElementById('game-' + uid);
-
                 if (titleEl) titleEl.innerText = data.title;
                 if (descEl) descEl.innerText = data.desc;
                 if (gameEl) gameEl.innerText = data.gameName;
