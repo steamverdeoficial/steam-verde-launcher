@@ -102,13 +102,14 @@ function updateSplashStatus(text, percent = null) {
     } 
 } 
 
-// --- OVERLAY DE CONQUISTAS (A MÁGICA) ---
+// --- OVERLAY DE CONQUISTAS (LÓGICA "SMART CLOSE") ---
 let overlayWindow = null;
 
 function showAchievementOverlay(achievement) {
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width, height } = primaryDisplay.workAreaSize; 
 
+    // Se já existe uma aberta, fecha para mostrar a nova
     if (overlayWindow && !overlayWindow.isDestroyed()) {
         overlayWindow.close();
     }
@@ -136,14 +137,34 @@ function showAchievementOverlay(achievement) {
         overlayWindow.webContents.send('set-achievement', achievement);
     });
 
-    setTimeout(() => {
-        if (overlayWindow && !overlayWindow.isDestroyed()) {
-            overlayWindow.close();
+    // --- LÓGICA DE FECHAMENTO INTELIGENTE ---
+    const closeOverlay = () => {
+        // Aguarda 4.5 segundos para o usuário ler, depois fecha
+        setTimeout(() => {
+            if (overlayWindow && !overlayWindow.isDestroyed()) {
+                overlayWindow.close();
+            }
+        }, 4500);
+    };
+
+    if (siteWindow && !siteWindow.isDestroyed()) {
+        if (siteWindow.isFocused()) {
+            // Se o usuário JÁ está no launcher, fecha normalmente
+            closeOverlay();
+        } else {
+            // Se o usuário está jogando (Launcher sem foco), ESPERA ele focar no Launcher
+            siteWindow.once('focus', () => {
+                // Assim que focar, dispara o timer para fechar
+                closeOverlay();
+            });
         }
-    }, 6000);
+    } else {
+        // Fallback caso algo estranho aconteça
+        closeOverlay();
+    }
 }
 
-// --- JANELA DE AVISOS (RECUPERADA) ---
+// --- JANELA DE AVISOS ---
 function createNoticeWindow(notice) {
     const win = new BrowserWindow({ 
         width: 500, height: 600, 
@@ -192,7 +213,7 @@ function createNoticeWindow(notice) {
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent));
 }
 
-// --- JANELA LISTA DE CONQUISTAS (COM BARRA DE PROGRESSO) ---
+// --- JANELA LISTA DE CONQUISTAS (VISUAL AFINADO) ---
 function createAchievementsWindow() {
     const win = new BrowserWindow({ 
         width: 900, height: 700, 
@@ -204,18 +225,15 @@ function createAchievementsWindow() {
     const localList = LocalAch.getList();
     const gameList = gameWatcher ? gameWatcher.getAllUnlocked() : [];
 
-    // --- HTML MISSÕES ---
+    // --- HTML MISSÕES (LAUNCHER) ---
     let launcherHtml = '';
     localList.forEach(ach => {
         const cssClass = ach.unlocked ? 'mission-card unlocked' : 'mission-card locked';
         
-        // LÓGICA DO RODAPÉ (XP vs PROGRESSO)
         let footerHtml = '';
         if (ach.unlocked) {
-            // Se já ganhou, mostra o XP dourado
             footerHtml = `<div class="ach-xp">+${ach.xp} XP</div>`;
         } else if (ach.progress) {
-            // Se está em andamento, mostra BARRA
             const pct = Math.min(100, (ach.progress.cur / ach.progress.max) * 100);
             footerHtml = `
                 <div class="ach-prog-wrapper">
@@ -226,7 +244,6 @@ function createAchievementsWindow() {
                 </div>
             `;
         } else {
-            // Se é missão sem contagem (ex: entrar de madrugada), mostra XP cinza
             footerHtml = `<div class="ach-xp locked-xp">+${ach.xp} XP</div>`;
         }
 
@@ -241,25 +258,47 @@ function createAchievementsWindow() {
             </div>`;
     });
 
-    // --- HTML JOGOS ---
+    // --- HTML JOGOS (CATEGORIZADO) ---
+    const groupedGames = {};
+    gameList.forEach(ach => {
+        if (!groupedGames[ach.appId]) {
+            groupedGames[ach.appId] = {
+                name: ach.gameName,
+                items: []
+            };
+        }
+        groupedGames[ach.appId].items.push(ach);
+    });
+
     let gamesHtml = '';
-    if(gameList.length === 0) {
-        gamesHtml = '<div style="grid-column:1/-1; text-align:center; color:#666; padding:20px;">Nenhuma conquista de jogo detectada ainda.</div>';
+    
+    if (Object.keys(groupedGames).length === 0) {
+        gamesHtml = '<div style="text-align:center; color:#666; padding:20px; font-style:italic;">Nenhuma conquista de jogo detectada ainda.</div>';
     } else {
-        gameList.forEach(ach => {
-            const divId = `card-${ach.uniqueId}`; 
+        for (const [appId, group] of Object.entries(groupedGames)) {
             gamesHtml += `
-            <div class="game-card unlocked" id="${divId}">
-                <div class="game-icon-wrapper">
-                    <img src="${ach.icon}" id="img-${ach.uniqueId}" onerror="this.src='https://cdn.cloudflare.steamstatic.com/steam/apps/${ach.appId}/capsule_184x69.jpg'">
+                <div class="game-category-container">
+                    <div class="game-category-title">${group.name}</div>
+                    <div class="game-category-line"></div>
                 </div>
-                <div class="info">
-                    <div class="ach-title" id="title-${ach.uniqueId}">${ach.title}</div>
-                    <div class="ach-desc" id="desc-${ach.uniqueId}">${ach.desc}</div>
-                    <div class="ach-game-name" id="game-${ach.uniqueId}">${ach.gameName}</div>
-                </div>
-            </div>`;
-        });
+                <div class="grid">
+            `;
+
+            group.items.forEach(ach => {
+                const divId = `card-${ach.uniqueId}`; 
+                gamesHtml += `
+                <div class="game-card unlocked" id="${divId}">
+                    <div class="game-icon-wrapper">
+                        <img src="${ach.icon}" id="img-${ach.uniqueId}" onerror="this.src='https://cdn.cloudflare.steamstatic.com/steam/apps/${ach.appId}/capsule_184x69.jpg'">
+                    </div>
+                    <div class="info">
+                        <div class="ach-title" id="title-${ach.uniqueId}">${ach.title}</div>
+                        <div class="ach-desc" id="desc-${ach.uniqueId}">${ach.desc}</div>
+                    </div>
+                </div>`;
+            });
+            gamesHtml += `</div>`; 
+        }
     }
 
     const htmlContent = `
@@ -277,29 +316,48 @@ function createAchievementsWindow() {
             .content::-webkit-scrollbar { width: 8px; }
             .content::-webkit-scrollbar-track { background: #121418; }
             .content::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+            
             h2 { color: #fff; border-bottom: 2px solid #333; padding-bottom: 10px; margin-top: 30px; font-size: 18px; }
             h2:first-of-type { margin-top: 0; }
+            
+            /* CATEGORIAS */
+            .game-category-container { margin-top: 30px; margin-bottom: 10px; }
+            .game-category-title { font-size: 14px; font-weight: bold; color: #a4d007; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 10px; }
+            .game-category-line { width: 50%; height: 2px; background: linear-gradient(90deg, #333, transparent); margin-top: 5px; margin-bottom: 15px; }
+
             .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
             
-            .mission-card, .game-card { background: #1b1e24; border: 1px solid #333; border-radius: 6px; padding: 10px; display: flex; align-items: center; gap: 15px; transition: 0.2s; position: relative; overflow: hidden; }
+            /* --- MODIFICADO: CARDS MAIS FINOS --- */
+            .mission-card, .game-card { 
+                background: #1b1e24; 
+                border: 1px solid #333; 
+                border-radius: 6px; 
+                padding: 6px 10px; /* Reduzi o padding vertical */
+                display: flex; 
+                align-items: center; 
+                gap: 15px; 
+                transition: 0.2s; 
+                position: relative; 
+                overflow: hidden; 
+            }
             .unlocked { border-color: #a4d007; background: linear-gradient(45deg, #1b1e24, #232830); }
             .locked { opacity: 0.5; filter: grayscale(1); }
             
             .mission-icon { font-size: 24px; min-width: 40px; display:flex; justify-content:center; }
-            .game-card { height: 95px; }
+            
+            /* ALTURA REDUZIDA PARA 80PX (Era 95px) */
+            .game-card { height: 80px; } 
+            
             .game-icon-wrapper { width: 64px; height: 64px; min-width: 64px; border-radius: 6px; overflow: hidden; background: #000; }
             .game-icon-wrapper img { width: 100%; height: 100%; object-fit: cover; }
 
             .info { flex: 1; overflow: hidden; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
             .ach-title { font-weight: bold; color: #fff; font-size: 13px; margin-bottom: 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-            .ach-desc { color: #8f98a0; font-size: 11px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 6px; }
+            .ach-desc { color: #8f98a0; font-size: 11px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 4px; }
             
-            /* XP e Progresso */
             .ach-xp { font-size: 10px; color: #FFD700; font-weight: bold; border: 1px solid #FFD700; display: inline-block; padding: 2px 6px; border-radius: 4px; }
             .locked-xp { color: #666; border-color: #444; }
-            .ach-game-name { font-size: 10px; color: #a4d007; font-weight: bold; text-transform: uppercase; margin-top: 2px; }
 
-            /* ESTILOS DA BARRA DE PROGRESSO */
             .ach-prog-wrapper { width: 100%; display: flex; flex-direction: column; gap: 3px; }
             .ach-prog-text { font-size: 10px; color: #a4d007; font-weight: bold; text-align: right; }
             .ach-prog-bar { width: 100%; height: 6px; background: #333; border-radius: 3px; overflow: hidden; }
@@ -314,8 +372,9 @@ function createAchievementsWindow() {
         <div class="content">
             <h2>MISSÕES STEAM VERDE</h2>
             <div class="grid">${launcherHtml}</div>
-            <h2>TROFÉUS DE JOGOS (DESBLOQUEADOS)</h2>
-            <div class="grid">${gamesHtml}</div>
+            
+            <h2 style="margin-top: 40px; border-color: #a4d007;">TROFÉUS DE JOGOS (DESBLOQUEADOS)</h2>
+            ${gamesHtml}
         </div>
         <script>
             const { ipcRenderer } = require('electron');
@@ -324,10 +383,9 @@ function createAchievementsWindow() {
                 const titleEl = document.getElementById('title-' + uid);
                 const descEl = document.getElementById('desc-' + uid);
                 const imgEl = document.getElementById('img-' + uid);
-                const gameEl = document.getElementById('game-' + uid);
+                
                 if (titleEl) titleEl.innerText = data.title;
                 if (descEl) descEl.innerText = data.desc;
-                if (gameEl) gameEl.innerText = data.gameName;
                 if (imgEl && data.icon) imgEl.src = data.icon;
             });
         </script>
@@ -533,7 +591,7 @@ ipcMain.on('rd-remove-token', () => RD.removeToken());
 ipcMain.on('get-notices', () => { if(siteWindow) Notifications.checkNewNotices(siteWindow); });
 ipcMain.on('mark-notice-read', (e, id) => { if(siteWindow) Notifications.markAsRead(id, siteWindow); });
 ipcMain.on('delete-notice', (e, id) => { if(siteWindow) Notifications.deleteNotice(id, siteWindow); });
-ipcMain.on('open-notice-window', (e, notice) => { createNoticeWindow(notice); }); // <--- AGORA ESTÁ DEFINIDO!
+ipcMain.on('open-notice-window', (e, notice) => { createNoticeWindow(notice); }); 
 ipcMain.on('console-log', (event, msg) => console.log("[RENDERER]", msg));
 
 // IPC CONQUISTAS
