@@ -96,13 +96,15 @@ const INJECT_UI_SCRIPT = `
         const iconGames = '<svg viewBox="0 0 24 24"><path style="fill:url(#gradGames)" d="M21,6H3A2,2 0 0,0 1,8V16A2,2 0 0,0 3,18H21A2,2 0 0,0 23,16V8A2,2 0 0,0 21,6M10,15H8V17H6V15H4V13H6V11H8V13H10V15M20,11H18V13H20V11M20,15H18V17H20V15M17,11H15V13H17V11M17,15H15V17H17V15Z"/><defs><linearGradient id="gradGames" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#4facfe;stop-opacity:1" /><stop offset="100%" style="stop-color:#00f2fe;stop-opacity:1" /></linearGradient></defs></svg>';
         const iconNews = '<svg viewBox="0 0 24 24"><path style="fill:url(#gradNews)" d="M12 2C6.48 2 2 6.48 2 12S6.48 22 12 22 22 17.52 22 12 17.52 2 12 2M13 17H11V15H13V17M13 13H11V7H13V13Z"/><defs><linearGradient id="gradNews" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#f093fb;stop-opacity:1" /><stop offset="100%" style="stop-color:#f5576c;stop-opacity:1" /></linearGradient></defs></svg>';
         const iconTrophy = '<svg viewBox="0 0 24 24"><path style="fill:url(#gradTrophy)" d="M19 5H17C17 3.9 16.1 3 15 3H9C7.9 3 7 3.9 7 5H5C3.9 5 3 5.9 3 7V8C3 10.8 5.2 13 8 13.5V15C8 16.1 8.9 17 10 17H14C15.1 17 16 16.1 16 15V13.5C18.8 13 21 10.8 21 8V7C21 5.9 20.1 5 19 5M5 8V7H7V8C7 9.1 6.1 10 5 10C5 10 5 10 5 10V8M19 8V10C19 10 19 10 19 10C17.9 10 17 9.1 17 8V7H19V8M12 18C10.9 18 10 18.9 10 20H14C14 18.9 13.1 18 12 18Z"/><defs><linearGradient id="gradTrophy" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" style="stop-color:#FFD700;stop-opacity:1" /><stop offset="100%" style="stop-color:#FDB931;stop-opacity:1" /></linearGradient></defs></svg>';
-        
+        const iconFolder = '<svg viewBox="0 0 24 24" style="fill:#8f98a0"><path d="M10 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V8C22 6.9 21.1 6 20 6H12L10 4Z"/></svg>';
+
         menu.innerHTML = \`
             <a class="sv-menu-item" onclick="window.ipc.openMyGames()">\${iconGames} Meus Jogos</a>
             <div class="sv-menu-divider"></div>
             <a class="sv-menu-item" id="sv-menu-avisos" onclick="window.ipc.openNotices()">\${iconNews} Avisos e Novidades</a>
             <a class="sv-menu-item" onclick="window.ipc.openAchievements()">\${iconTrophy} Conquistas</a>
             <div class="sv-menu-divider"></div>
+            <a class="sv-menu-item" onclick="window.ipc.changeDownloadPath()">\${iconFolder} Alterar Pasta de Download</a>
             <a class="sv-menu-item" onclick="window.ipc.openRD()"><svg viewBox="0 0 24 24" style="fill:#a4d007"><path d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3M19 19H5V5H19V19M10 17L15 12L10 7V17Z"/></svg> Real-Debrid</a>
             <div style="flex:1"></div> <a class="sv-menu-item" onclick="window.debugClearData()" style="color:#ff4d4d; border-top:1px solid #282c34; padding-top:20px; padding-bottom:20px">
                <svg viewBox="0 0 24 24" style="fill:#ff4d4d"><path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z" /></svg>
@@ -116,8 +118,7 @@ const INJECT_UI_SCRIPT = `
         };
     }
 
-    // LISTENER DE CONQUISTAS (Apenas lógica, sem HTML injetado)
-    // Quando recebe o desbloqueio, toca o som e manda abrir o Overlay Nativo
+    // LISTENER DE CONQUISTAS
     window.ipc.onAchievementUnlock((event, ach) => {
         playNotificationSound();
         window.ipc.showOverlay(ach);
@@ -290,7 +291,7 @@ const INJECT_UI_SCRIPT = `
                         <svg viewBox="0 0 24 24"><path d="M20,18H4V8H20M20,6H12L10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,4Z" /></svg>
                     </button>
                     <button class="sv-btn-icon btn-stop" onclick="window.ipc.stopTorrent()" title="Cancelar e Excluir">
-                         <svg viewBox="0 0 24 24"><path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" /></svg>
+                          <svg viewBox="0 0 24 24"><path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" /></svg>
                     </button>
                 </div>
             </div>
@@ -409,7 +410,7 @@ const INJECT_TITLEBAR_SCRIPT = (userName, iconBase64, appVersion) => `
     const updateTitle = () => { 
         const titleEl = document.getElementById('sv-app-title'); 
         if(titleEl && document.title) { 
-             let clean = document.title.replace(' - Steam Verde', '').replace(' | Steam Verde', ''); 
+             let clean = document.title.replace(' - Steam Verde', '').replace(' | Steam Verde', '');  
              titleEl.innerText = clean + ' | STEAM VERDE';  
         } 
     }; 

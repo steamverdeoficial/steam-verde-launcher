@@ -24,8 +24,11 @@ contextBridge.exposeInMainWorld('ipc', {
     switchTab: (infoHash) => ipcRenderer.send('switch-download-tab', infoHash),
     onUpdateTabs: (callback) => ipcRenderer.on('update-download-tabs', callback),
     
-    // --- ATUALIZADO: CONQUISTAS ---
-openAchievements: () => {
+    // --- NOVO: MUDAR PASTA DE DOWNLOAD ---
+    changeDownloadPath: () => ipcRenderer.send('change-download-path'),
+    // -------------------------------------
+
+    openAchievements: () => {
         ipcRenderer.send('open-achievements-window');
         const menu = document.getElementById('sv-side-menu');
         const overlay = document.getElementById('sv-menu-overlay');
@@ -33,13 +36,11 @@ openAchievements: () => {
         if(overlay) overlay.classList.remove('visible');
     },
     
-    // NOVO: Chama o Overlay flutuante
     showOverlay: (ach) => {
         ipcRenderer.send('show-overlay', ach);
     },
     
     onAchievementUnlock: (callback) => ipcRenderer.on('achievement-unlocked', callback),
-    // -----------------------------
 
     toggleFilesModal: () => {
         const modal = document.getElementById('sv-files-modal');

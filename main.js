@@ -17,15 +17,28 @@ const TorrentManager = require('./src/downloader');
 const LocalAch = require('./src/achievements_local');
 const GameWatcher = require('./src/achievements_watcher');
 
-// --- CONFIG ---
-let downloadPath = app.getPath('downloads'); 
-let torrentMgr = null; 
-let gameWatcher = null; 
-
+// --- CONFIGURAÇÃO E DADOS ---
 const userDataPath = app.getPath('userData');
 if (!fs.existsSync(userDataPath)) {
     try { fs.mkdirSync(userDataPath, { recursive: true }); } catch(e) {}
 }
+
+// ARQUIVO DE CONFIGURAÇÃO (Para salvar a pasta de download)
+const configPath = path.join(userDataPath, 'config.json');
+let downloadPath = app.getPath('downloads'); // Valor padrão inicial
+
+// Carrega configuração salva se existir
+try {
+    if (fs.existsSync(configPath)) {
+        const conf = JSON.parse(fs.readFileSync(configPath));
+        if (conf.downloadPath && fs.existsSync(conf.downloadPath)) {
+            downloadPath = conf.downloadPath;
+        }
+    }
+} catch (e) { console.error("Erro ao carregar config:", e); }
+
+let torrentMgr = null; 
+let gameWatcher = null; 
 
 RD.loadToken();
 
@@ -102,14 +115,13 @@ function updateSplashStatus(text, percent = null) {
     } 
 } 
 
-// --- OVERLAY DE CONQUISTAS (LÓGICA "SMART CLOSE") ---
+// --- OVERLAY DE CONQUISTAS ---
 let overlayWindow = null;
 
 function showAchievementOverlay(achievement) {
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width, height } = primaryDisplay.workAreaSize; 
 
-    // Se já existe uma aberta, fecha para mostrar a nova
     if (overlayWindow && !overlayWindow.isDestroyed()) {
         overlayWindow.close();
     }
@@ -137,9 +149,7 @@ function showAchievementOverlay(achievement) {
         overlayWindow.webContents.send('set-achievement', achievement);
     });
 
-    // --- LÓGICA DE FECHAMENTO INTELIGENTE ---
     const closeOverlay = () => {
-        // Aguarda 4.5 segundos para o usuário ler, depois fecha
         setTimeout(() => {
             if (overlayWindow && !overlayWindow.isDestroyed()) {
                 overlayWindow.close();
@@ -149,17 +159,13 @@ function showAchievementOverlay(achievement) {
 
     if (siteWindow && !siteWindow.isDestroyed()) {
         if (siteWindow.isFocused()) {
-            // Se o usuário JÁ está no launcher, fecha normalmente
             closeOverlay();
         } else {
-            // Se o usuário está jogando (Launcher sem foco), ESPERA ele focar no Launcher
             siteWindow.once('focus', () => {
-                // Assim que focar, dispara o timer para fechar
                 closeOverlay();
             });
         }
     } else {
-        // Fallback caso algo estranho aconteça
         closeOverlay();
     }
 }
@@ -213,7 +219,7 @@ function createNoticeWindow(notice) {
     win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent));
 }
 
-// --- JANELA LISTA DE CONQUISTAS (VISUAL AFINADO) ---
+// --- JANELA LISTA DE CONQUISTAS ---
 function createAchievementsWindow() {
     const win = new BrowserWindow({ 
         width: 900, height: 700, 
@@ -225,11 +231,9 @@ function createAchievementsWindow() {
     const localList = LocalAch.getList();
     const gameList = gameWatcher ? gameWatcher.getAllUnlocked() : [];
 
-    // --- HTML MISSÕES (LAUNCHER) ---
     let launcherHtml = '';
     localList.forEach(ach => {
         const cssClass = ach.unlocked ? 'mission-card unlocked' : 'mission-card locked';
-        
         let footerHtml = '';
         if (ach.unlocked) {
             footerHtml = `<div class="ach-xp">+${ach.xp} XP</div>`;
@@ -258,7 +262,6 @@ function createAchievementsWindow() {
             </div>`;
     });
 
-    // --- HTML JOGOS (CATEGORIZADO) ---
     const groupedGames = {};
     gameList.forEach(ach => {
         if (!groupedGames[ach.appId]) {
@@ -271,7 +274,6 @@ function createAchievementsWindow() {
     });
 
     let gamesHtml = '';
-    
     if (Object.keys(groupedGames).length === 0) {
         gamesHtml = '<div style="text-align:center; color:#666; padding:20px; font-style:italic;">Nenhuma conquista de jogo detectada ainda.</div>';
     } else {
@@ -283,7 +285,6 @@ function createAchievementsWindow() {
                 </div>
                 <div class="grid">
             `;
-
             group.items.forEach(ach => {
                 const divId = `card-${ach.uniqueId}`; 
                 gamesHtml += `
@@ -320,19 +321,17 @@ function createAchievementsWindow() {
             h2 { color: #fff; border-bottom: 2px solid #333; padding-bottom: 10px; margin-top: 30px; font-size: 18px; }
             h2:first-of-type { margin-top: 0; }
             
-            /* CATEGORIAS */
             .game-category-container { margin-top: 30px; margin-bottom: 10px; }
             .game-category-title { font-size: 14px; font-weight: bold; color: #a4d007; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 10px; }
             .game-category-line { width: 50%; height: 2px; background: linear-gradient(90deg, #333, transparent); margin-top: 5px; margin-bottom: 15px; }
 
             .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
             
-            /* --- MODIFICADO: CARDS MAIS FINOS --- */
             .mission-card, .game-card { 
                 background: #1b1e24; 
                 border: 1px solid #333; 
                 border-radius: 6px; 
-                padding: 6px 10px; /* Reduzi o padding vertical */
+                padding: 6px 10px; 
                 display: flex; 
                 align-items: center; 
                 gap: 15px; 
@@ -342,22 +341,15 @@ function createAchievementsWindow() {
             }
             .unlocked { border-color: #a4d007; background: linear-gradient(45deg, #1b1e24, #232830); }
             .locked { opacity: 0.5; filter: grayscale(1); }
-            
             .mission-icon { font-size: 24px; min-width: 40px; display:flex; justify-content:center; }
-            
-            /* ALTURA REDUZIDA PARA 80PX (Era 95px) */
             .game-card { height: 80px; } 
-            
             .game-icon-wrapper { width: 64px; height: 64px; min-width: 64px; border-radius: 6px; overflow: hidden; background: #000; }
             .game-icon-wrapper img { width: 100%; height: 100%; object-fit: cover; }
-
             .info { flex: 1; overflow: hidden; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
             .ach-title { font-weight: bold; color: #fff; font-size: 13px; margin-bottom: 2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
             .ach-desc { color: #8f98a0; font-size: 11px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 4px; }
-            
             .ach-xp { font-size: 10px; color: #FFD700; font-weight: bold; border: 1px solid #FFD700; display: inline-block; padding: 2px 6px; border-radius: 4px; }
             .locked-xp { color: #666; border-color: #444; }
-
             .ach-prog-wrapper { width: 100%; display: flex; flex-direction: column; gap: 3px; }
             .ach-prog-text { font-size: 10px; color: #a4d007; font-weight: bold; text-align: right; }
             .ach-prog-bar { width: 100%; height: 6px; background: #333; border-radius: 3px; overflow: hidden; }
@@ -372,7 +364,6 @@ function createAchievementsWindow() {
         <div class="content">
             <h2>MISSÕES STEAM VERDE</h2>
             <div class="grid">${launcherHtml}</div>
-            
             <h2 style="margin-top: 40px; border-color: #a4d007;">TROFÉUS DE JOGOS (DESBLOQUEADOS)</h2>
             ${gamesHtml}
         </div>
@@ -383,7 +374,6 @@ function createAchievementsWindow() {
                 const titleEl = document.getElementById('title-' + uid);
                 const descEl = document.getElementById('desc-' + uid);
                 const imgEl = document.getElementById('img-' + uid);
-                
                 if (titleEl) titleEl.innerText = data.title;
                 if (descEl) descEl.innerText = data.desc;
                 if (imgEl && data.icon) imgEl.src = data.icon;
@@ -494,8 +484,10 @@ function setupNetworkInterception(sess) {
     }); 
 } 
 
+// --- FUNÇÃO DE DOWNLOAD ATUALIZADA (Usa a variável global downloadPath) ---
 async function startTorrentDownload(magnetLink, gameImage) {
     if (torrentMgr) {
+        // Agora usamos a variável downloadPath que é mutável pelo usuário
         const rdHandled = await RD.handleMagnet(magnetLink, siteWindow, downloadPath, {
             saveGameToDb, formatBytes: (b) => torrentMgr.formatBytes(b), gameImage 
         });
@@ -513,6 +505,34 @@ ipcMain.on('launch-installer', (event, filePath) => {
     setTimeout(() => { shell.openPath(filePath); }, 500);
 });
 
+// --- NOVO: Handler para mudar pasta de download ---
+ipcMain.on('change-download-path', async (event) => {
+    if(!siteWindow) return;
+    const result = await dialog.showOpenDialog(siteWindow, {
+        properties: ['openDirectory'],
+        title: 'Selecione a nova pasta padrão para Downloads',
+        defaultPath: downloadPath
+    });
+
+    if(!result.canceled && result.filePaths.length > 0) {
+        const newPath = result.filePaths[0];
+        downloadPath = newPath; // Atualiza a variável global
+        
+        // Salva no arquivo de config
+        try {
+            fs.writeFileSync(configPath, JSON.stringify({ downloadPath: newPath }));
+            dialog.showMessageBox(siteWindow, {
+                type: 'info',
+                title: 'Sucesso',
+                message: `Pasta de download alterada para:\n${newPath}`,
+                buttons: ['OK']
+            });
+        } catch(e) {
+            console.error("Erro ao salvar config:", e);
+        }
+    }
+});
+
 ipcMain.on('torrent-pause', () => { if(torrentMgr) torrentMgr.togglePause(); });
 ipcMain.on('torrent-stop', () => { 
     if(RD.cancelDownload()) {
@@ -522,7 +542,7 @@ ipcMain.on('torrent-stop', () => {
     if(torrentMgr) torrentMgr.stopCurrent(); 
 });
 ipcMain.on('torrent-toggle-file', (event, index, selected) => { if(torrentMgr) torrentMgr.toggleFile(index, selected); });
-ipcMain.on('torrent-open-folder', () => shell.openPath(downloadPath));
+ipcMain.on('torrent-open-folder', () => shell.openPath(downloadPath)); // Usa a pasta atual
 ipcMain.on('start-torrent-download', (event, url, image) => startTorrentDownload(url, image));
 ipcMain.on('switch-download-tab', (event, infoHash) => { if(torrentMgr) torrentMgr.setActive(infoHash); });
 ipcMain.on('request-file-list', () => { if(torrentMgr) torrentMgr.sendFilesList(); });
