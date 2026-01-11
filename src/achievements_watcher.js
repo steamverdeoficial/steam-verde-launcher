@@ -20,8 +20,8 @@ const WATCH_PATHS = [
 ];
 
 const IGNORED_KEYS = [
-    'Count', 'Language', 'UserName', 'AccountId', 'ListenPort', 'MaximumConnection', 
-    'VoiceServer', 'Stats', 'Version', 'Lobby', 'SteamAchievements', 'Achievements', 
+    'Count', 'Language', 'UserName', 'AccountId', 'ListenPort', 'MaximumConnection',
+    'VoiceServer', 'Stats', 'Version', 'Lobby', 'SteamAchievements', 'Achievements',
     'General', 'Settings', 'SaveDate'
 ];
 
@@ -40,10 +40,31 @@ class GameWatcher {
     constructor(mainWindow) {
         this.win = mainWindow;
         this.interval = null;
+        this.profileMgr = null;
+    }
+
+    setProfileManager(mgr) {
+        this.profileMgr = mgr;
     }
 
     start() {
         console.log('[WATCHER] Monitoramento com Cache Persistente iniciado.');
+        // Sincroniza estado inicial se possível
+        if (this.profileMgr && this.profileMgr.currentUser && this.profileMgr.currentUser.id > 0) {
+            // Precisamos esperar um pouco para não travar o boot
+            setTimeout(() => {
+                const all = this.getAllUnlocked();
+                // Formata para apenas IDs de string (appId-achId) para o servidor saber de qual jogo é
+                // O servidor espera achievements: [ '489830-ACH_01', ... ] ou similar? 
+                // O LocalAch mandava IDs simples. Aqui temos appId + id.
+                // Vou mandar um formato composto: "GAME_APPID_ACHID" ou adaptar o ProfileManager.
+                // O ideal é mandar a lista de objetos, mas o ProfileManager.syncAchievements espera IDs simples.
+                // Vou modificar o syncAchievements depois. Por enquanto mando strings.
+                const syncList = all.map(a => ({ id: `${a.appId}-${a.id}`, unlocked: true }));
+                this.profileMgr.syncAchievements(syncList);
+            }, 5000);
+        }
+
         // Mantém o scan rodando para detectar conquistas novas ENQUANTO joga
         this.interval = setInterval(() => this.scan(), 4000);
     }
@@ -64,10 +85,10 @@ class GameWatcher {
                     if (filePath) {
                         const unlocked = this.readFileSafe(filePath, source.type);
                         unlocked.forEach(achKey => {
-                            if(!allAchievements.find(a => a.id === achKey && a.appId === appId)) {
+                            if (!allAchievements.find(a => a.id === achKey && a.appId === appId)) {
                                 const cacheKey = `${appId}-${achKey}`;
                                 const cached = metaCache[cacheKey];
-                                
+
                                 // Se não tem no cache, dispara a busca silenciosa
                                 if (!cached) this.fetchMeta(appId, achKey);
 
@@ -86,7 +107,7 @@ class GameWatcher {
                         });
                     }
                 });
-            } catch (e) {}
+            } catch (e) { }
         });
         return allAchievements;
     }
@@ -101,7 +122,7 @@ class GameWatcher {
                     let targetFile = this.findTargetFile(source, appId);
                     if (targetFile) this.checkFile(appId, targetFile, source.type);
                 });
-            } catch (e) {}
+            } catch (e) { }
         });
     }
 
@@ -132,12 +153,12 @@ class GameWatcher {
                 const oldData = fileStates[filePath].data;
                 const newData = this.readFileSafe(filePath, type);
                 fileStates[filePath] = { mtime, data: newData };
-                
+
                 // Pega apenas as NOVAS
                 const newItems = newData.filter(x => !oldData.includes(x));
                 newItems.forEach(achKey => this.notify(appId, achKey));
             }
-        } catch (e) {}
+        } catch (e) { }
     }
 
     readFileSafe(filePath, type) {
@@ -161,7 +182,7 @@ class GameWatcher {
                     if (eqIdx === -1) return;
                     const key = l.substring(0, eqIdx).trim();
                     const val = l.substring(eqIdx + 1).trim();
-                    
+
                     if (key.toLowerCase() === 'achieved' && (val === '1' || val.toLowerCase() === 'true')) {
                         if (typeof isSection === 'string') unlocked.push(isSection);
                     } else if ((isSection === 'SteamAchievements' || isSection === 'Achievements' || isSection === false) && (val === '1' || val.toLowerCase() === 'true')) {
@@ -184,8 +205,13 @@ class GameWatcher {
                 title: meta.title,
                 desc: meta.desc,
                 icon: meta.icon,
-                isGame: true 
+                isGame: true
             });
+        }
+
+        // Sync com servidor
+        if (this.profileMgr) {
+            this.profileMgr.syncAchievements([{ id: `${appId}-${achKey}`, unlocked: true }]);
         }
     }
 
@@ -212,12 +238,12 @@ class GameWatcher {
         try {
             const response = await axios.get(API_URL, {
                 params: { appid: appId, name: achKey },
-                timeout: 8000 
+                timeout: 8000
             });
 
             if (response.data && (response.status === 200 || response.status === 304)) {
                 res = response.data;
-                
+
                 // SALVA NO CACHE
                 metaCache[key] = res;
                 fs.writeFileSync(CACHE_FILE, JSON.stringify(metaCache, null, 2));
@@ -235,10 +261,31 @@ class GameWatcher {
                     });
                 });
             }
-        } catch (e) {}
+        } catch (e) { }
 
         metaCache[key] = res;
         return res;
+    }
+
+    // --- NOVA FUNÇÃO: Expor Jogos Locais para o Perfil ---
+    getLocalGames() {
+        const games = [];
+        WATCH_PATHS.forEach(source => {
+            if (!fs.existsSync(source.path)) return;
+            try {
+                const folders = fs.readdirSync(source.path);
+                folders.forEach(appId => {
+                    // Se tiver arquivo, é um jogo monitorado
+                    if (this.findTargetFile(source, appId)) {
+                        games.push({
+                            name: appId, // Como o watcher não sabe o nome real, usa o appId (pasta). Idealmente deveria ter um mapa.
+                            cover: `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/header.jpg` // Tenta banner steam
+                        });
+                    }
+                });
+            } catch (e) { }
+        });
+        return games;
     }
 }
 

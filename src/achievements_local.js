@@ -25,15 +25,19 @@ class LocalAchievements {
     constructor() {
         this.data = {
             unlocked: [],
-            stats: { 
-                downloads: 0, 
-                minutes_online: 0, 
+            stats: {
+                downloads: 0,
+                minutes_online: 0,
                 rd_linked: false,
                 last_login_date: '',
                 login_streak: 0
             }
         };
         this.load();
+    }
+
+    setProfileManager(mgr) {
+        this.profileMgr = mgr;
     }
 
     load() {
@@ -44,11 +48,11 @@ class LocalAchievements {
                 if (!this.data.stats.last_login_date) this.data.stats.last_login_date = '';
                 if (!this.data.stats.login_streak) this.data.stats.login_streak = 0;
             }
-        } catch (e) {}
+        } catch (e) { }
     }
 
     save() {
-        try { fs.writeFileSync(DB_PATH, JSON.stringify(this.data)); } catch (e) {}
+        try { fs.writeFileSync(DB_PATH, JSON.stringify(this.data)); } catch (e) { }
     }
 
     // --- AQUI ESTÁ A MUDANÇA: CÁLCULO DE PROGRESSO ---
@@ -60,19 +64,19 @@ class LocalAchievements {
             // Se não desbloqueou, calcula o progresso para exibir a barra
             if (!unlocked) {
                 const s = this.data.stats;
-                switch(ach.id) {
+                switch (ach.id) {
                     case 'first_dl': progress = { cur: s.downloads, max: 1, label: '' }; break;
                     case 'collector_5': progress = { cur: s.downloads, max: 5, label: 'jogos' }; break;
                     case 'collector_10': progress = { cur: s.downloads, max: 10, label: 'jogos' }; break;
                     case 'collector_20': progress = { cur: s.downloads, max: 20, label: 'jogos' }; break;
                     case 'streak_7': progress = { cur: s.login_streak, max: 7, label: 'dias' }; break;
                     case 'streak_30': progress = { cur: s.login_streak, max: 30, label: 'dias' }; break;
-                    case 'marathon': 
+                    case 'marathon':
                         // Converte minutos para horas
-                        progress = { cur: Math.floor(s.minutes_online / 60), max: 5, label: 'horas' }; 
+                        progress = { cur: Math.floor(s.minutes_online / 60), max: 5, label: 'horas' };
                         break;
                     // Missões booleanas (ou tem ou não tem) ficam sem barra
-                    default: progress = null; 
+                    default: progress = null;
                 }
             }
 
@@ -92,6 +96,9 @@ class LocalAchievements {
             const ach = LAUNCHER_ACHIEVEMENTS.find(a => a.id === id);
             if (ach && win && !win.isDestroyed()) {
                 win.webContents.send('achievement-unlocked', { ...ach, isGame: false });
+            }
+            if (this.profileMgr) {
+                this.profileMgr.syncAchievements(this.getList());
             }
         }
     }
@@ -115,7 +122,7 @@ class LocalAchievements {
         if (this.data.stats.downloads >= 5) this.unlock('collector_5', win);
         if (this.data.stats.downloads >= 10) this.unlock('collector_10', win);
         if (this.data.stats.downloads >= 20) this.unlock('collector_20', win);
-        
+
         if (this.data.stats.minutes_online >= 300) this.unlock('marathon', win);
         if (this.data.stats.rd_linked) this.unlock('rd_user', win);
 
@@ -125,10 +132,10 @@ class LocalAchievements {
 
     checkStartup(win) {
         this.unlock('welcome', win);
-        
+
         const now = new Date();
         const h = now.getHours();
-        const day = now.getDay(); 
+        const day = now.getDay();
 
         if (h >= 0 && h < 5) this.unlock('night_owl', win);
         if (h >= 6 && h < 10) this.unlock('early_bird', win);
@@ -142,7 +149,7 @@ class LocalAchievements {
                 const date1 = new Date(lastLogin);
                 const date2 = new Date(todayStr);
                 const diffTime = Math.abs(date2 - date1);
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
                 if (diffDays === 1) this.data.stats.login_streak += 1;
                 else this.data.stats.login_streak = 1;

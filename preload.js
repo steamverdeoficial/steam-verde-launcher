@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
-let installPath = null; 
+let installPath = null;
 let archivePath = null;
 
 contextBridge.exposeInMainWorld('ipc', {
@@ -18,32 +18,55 @@ contextBridge.exposeInMainWorld('ipc', {
     goBack: () => ipcRenderer.send('nav-back'),
     goForward: () => ipcRenderer.send('nav-forward'),
     startTorrent: (url, image) => ipcRenderer.send('start-torrent-download', url, image),
+    addFriend: (id) => ipcRenderer.send('add-friend', id),
+    acceptFriend: (id) => ipcRenderer.send('accept-friend', id),
+    rejectFriend: (id) => ipcRenderer.send('reject-friend', id),
+    removeFriend: (id) => ipcRenderer.send('remove-friend', id),
+    blockFriend: (id) => ipcRenderer.send('block-friend', id),
+    unblockFriend: (id) => ipcRenderer.send('unblock-friend', id),
+    getBlockedUsers: () => ipcRenderer.send('get-blocked-users'),
+    onFriendRequestsUpdate: (cb) => ipcRenderer.on('friend-requests-update', cb),
+    onFriendStatusUpdate: (cb) => ipcRenderer.on('friend-status', cb),
+
+    // CHAT API
+    sendChatMessage: (friendId, text) => ipcRenderer.send('chat-send', friendId, text),
+    onChatUpdate: (cb) => ipcRenderer.on('chat-update', cb),
+    openChat: (friendId) => ipcRenderer.send('chat-open', friendId),
+    closeChat: (friendId) => ipcRenderer.send('chat-close', friendId),
+    clearChat: (friendId) => ipcRenderer.send('chat-clear', friendId),
+    onChatNotification: (cb) => {
+        ipcRenderer.on('chat-notification', (event, friendId, friendName) => {
+            cb(friendId, friendName);
+        });
+    },
+
     pauseTorrent: () => ipcRenderer.send('torrent-pause'),
     stopTorrent: () => ipcRenderer.send('torrent-stop'),
     openFolder: () => ipcRenderer.send('torrent-open-folder'),
     switchTab: (infoHash) => ipcRenderer.send('switch-download-tab', infoHash),
     onUpdateTabs: (callback) => ipcRenderer.on('update-download-tabs', callback),
-    
-    // --- ATUALIZADO: CONQUISTAS ---
-openAchievements: () => {
+
+    // --- NOVO: MUDAR PASTA DE DOWNLOAD ---
+    changeDownloadPath: () => ipcRenderer.send('change-download-path'),
+    // -------------------------------------
+
+    openAchievements: () => {
         ipcRenderer.send('open-achievements-window');
         const menu = document.getElementById('sv-side-menu');
         const overlay = document.getElementById('sv-menu-overlay');
-        if(menu) menu.classList.remove('open');
-        if(overlay) overlay.classList.remove('visible');
+        if (menu) menu.classList.remove('open');
+        if (overlay) overlay.classList.remove('visible');
     },
-    
-    // NOVO: Chama o Overlay flutuante
+
     showOverlay: (ach) => {
         ipcRenderer.send('show-overlay', ach);
     },
-    
+
     onAchievementUnlock: (callback) => ipcRenderer.on('achievement-unlocked', callback),
-    // -----------------------------
 
     toggleFilesModal: () => {
         const modal = document.getElementById('sv-files-modal');
-        if(modal) {
+        if (modal) {
             const isHidden = (modal.style.display === 'none' || modal.style.display === '');
             if (isHidden) {
                 modal.style.display = 'flex';
@@ -53,13 +76,16 @@ openAchievements: () => {
             }
         }
     },
-    
+
     toggleMenu: () => {
         const menu = document.getElementById('sv-side-menu');
         const overlay = document.getElementById('sv-menu-overlay');
-        if(menu && overlay) {
+        if (menu && overlay) {
             menu.classList.toggle('open');
             overlay.classList.toggle('visible');
+            if (menu.classList.contains('open')) {
+                ipcRenderer.send('get-user-info');
+            }
         }
     },
 
@@ -67,87 +93,106 @@ openAchievements: () => {
         const bar = document.getElementById('sv-download-bar');
         if (!bar) return;
         if (bar.classList.contains('visible')) {
-            bar.classList.remove('visible'); 
-            localStorage.setItem('sv-bar-collapsed', 'true'); 
+            bar.classList.remove('visible');
+            localStorage.setItem('sv-bar-collapsed', 'true');
         } else {
-            bar.classList.add('visible'); 
-            localStorage.setItem('sv-bar-collapsed', 'false'); 
+            bar.classList.add('visible');
+            localStorage.setItem('sv-bar-collapsed', 'false');
         }
     },
 
     toggleFile: (index, checked, isPriority) => {
         ipcRenderer.send('torrent-toggle-file', index, checked, isPriority);
-        if(isPriority) {
+        if (isPriority) {
             const btn = document.getElementById(`prio-${index}`);
-            if(btn) btn.classList.toggle('active');
+            if (btn) btn.classList.toggle('active');
         }
     },
 
     openNotices: () => {
         const modal = document.getElementById('sv-notices-modal');
-        if(modal) modal.style.display = 'flex';
-        ipcRenderer.send('get-notices'); 
+        if (modal) modal.style.display = 'flex';
+        ipcRenderer.send('get-notices');
         const menu = document.getElementById('sv-side-menu');
         const overlay = document.getElementById('sv-menu-overlay');
-        if(menu) menu.classList.remove('open');
-        if(overlay) overlay.classList.remove('visible');
+        if (menu) menu.classList.remove('open');
+        if (overlay) overlay.classList.remove('visible');
     },
     closeNotices: () => {
         const modal = document.getElementById('sv-notices-modal');
-        if(modal) modal.style.display = 'none';
+        if (modal) modal.style.display = 'none';
     },
     markNoticeRead: (id) => ipcRenderer.send('mark-notice-read', id),
     deleteNotice: (id) => ipcRenderer.send('delete-notice', id),
     onUpdateNotices: (callback) => ipcRenderer.on('update-notices-list', callback),
     openNoticeWindow: (notice) => ipcRenderer.send('open-notice-window', notice),
     onUpdateBadges: (callback) => ipcRenderer.on('update-badges', callback),
+    onFriendRequestsUpdate: (callback) => ipcRenderer.on('friend-requests-update', callback),
+    acceptFriend: (id) => ipcRenderer.send('accept-friend', id),
+    rejectFriend: (id) => ipcRenderer.send('reject-friend', id),
 
     openRD: () => {
         const menu = document.getElementById('sv-side-menu');
         const overlay = document.getElementById('sv-menu-overlay');
         const rdModal = document.getElementById('sv-rd-modal');
-        if(menu) menu.classList.remove('open');
-        if(overlay) overlay.classList.remove('visible');
-        if(rdModal) rdModal.style.display = 'flex';
+        if (menu) menu.classList.remove('open');
+        if (overlay) overlay.classList.remove('visible');
+        if (rdModal) rdModal.style.display = 'flex';
     },
     closeRD: () => {
         const rdModal = document.getElementById('sv-rd-modal');
-        if(rdModal) rdModal.style.display = 'none';
+        if (rdModal) rdModal.style.display = 'none';
     },
     saveRDToken: (token) => ipcRenderer.send('rd-save-token', token),
     removeRDToken: () => ipcRenderer.send('rd-remove-token'),
+    clearUserData: () => ipcRenderer.send('clear-user-data'),
 
     openMyGames: () => {
         const modal = document.getElementById('sv-mygames-modal');
-        if(modal) modal.style.display = 'flex';
-        ipcRenderer.send('get-my-games'); 
+        if (modal) modal.style.display = 'flex';
+        ipcRenderer.send('get-my-games');
         const menu = document.getElementById('sv-side-menu');
         const overlay = document.getElementById('sv-menu-overlay');
-        if(menu) menu.classList.remove('open');
-        if(overlay) overlay.classList.remove('visible');
+        if (menu) menu.classList.remove('open');
+        if (overlay) overlay.classList.remove('visible');
     },
     closeMyGames: () => {
         const modal = document.getElementById('sv-mygames-modal');
-        if(modal) modal.style.display = 'none';
+        if (modal) modal.style.display = 'none';
     },
     openGameFolder: (path) => ipcRenderer.send('open-game-folder', path),
     launchInstaller: (path) => ipcRenderer.send('launch-installer', path),
-    
+    onUpdateMyGames: (callback) => ipcRenderer.on('update-my-games', callback),
+
+    openProfile: (targetId) => ipcRenderer.send('open-profile', targetId),
+    closeProfile: () => ipcRenderer.send('close-profile'),
+
+    openSettings: () => ipcRenderer.send('open-settings'),
+    closeSettings: () => ipcRenderer.send('close-settings'),
+    savePrivacy: (settings) => ipcRenderer.send('save-privacy', settings),
+
+    onOpenProfileData: (callback) => ipcRenderer.on('open-profile-data', callback),
+    onUpdateSettings: (callback) => ipcRenderer.on('update-settings-ui', callback),
+    onUpdateUserInfo: (callback) => ipcRenderer.on('update-user-info', callback),
+    getUserInfo: () => ipcRenderer.send('get-user-info'),
+    saveNonce: (nonce) => ipcRenderer.send('save-nonce', nonce),
+    forceSetUser: (id) => ipcRenderer.send('force-set-user', id),
+
     removeGame: (name) => {
-        if(confirm(`Tem certeza que deseja remover "${name}" da sua lista?\nIsso não apaga os arquivos do PC, apenas o atalho.`)) {
+        if (confirm(`Tem certeza que deseja remover "${name}" da sua lista?\nIsso não apaga os arquivos do PC, apenas o atalho.`)) {
             ipcRenderer.send('remove-game-from-db', name);
         }
     }
 });
 
 ipcRenderer.on('install-ready', (event, path) => {
-    installPath = path; 
+    installPath = path;
     const btn = document.getElementById('sv-float-dl-btn');
-    if(btn) {
+    if (btn) {
         btn.classList.add('install-mode');
         btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8,5.14V19.14L19,12.14L8,5.14Z" /></svg> INSTALAR AGORA';
         btn.style.background = '';
-        btn.onclick = function() {
+        btn.onclick = function () {
             ipcRenderer.send('launch-installer', installPath);
         };
     }
@@ -155,37 +200,37 @@ ipcRenderer.on('install-ready', (event, path) => {
 
 ipcRenderer.on('archive-ready', (event, data) => {
     const btn = document.getElementById('sv-float-dl-btn');
-    if(!btn) return;
+    if (!btn) return;
     archivePath = data.path;
     btn.classList.add('install-mode');
-    
+
     if (data.type === 'zip') {
         btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M19,9H15V3H9V9H5L12,16L19,9M5,18V20H19V18H5Z" /></svg> EXTRAIR E INSTALAR';
-        btn.style.background = 'linear-gradient(90deg, #d35400 0%, #e67e22 100%)'; 
-        btn.onclick = function() {
+        btn.style.background = 'linear-gradient(90deg, #d35400 0%, #e67e22 100%)';
+        btn.onclick = function () {
             btn.innerHTML = 'EXTRAINDO... (AGUARDE)';
-            btn.style.pointerEvents = 'none'; 
+            btn.style.pointerEvents = 'none';
             btn.style.opacity = '0.8';
             ipcRenderer.send('extract-archive', archivePath);
         };
     } else {
         btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M20,18H4V8H20M20,6H12L10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,4Z"/></svg> ABRIR PARA INSTALAR';
-        btn.style.background = 'linear-gradient(90deg, #2c3e50 0%, #4ca1af 100%)'; 
-        btn.onclick = function() {
-            ipcRenderer.send('launch-installer', archivePath); 
+        btn.style.background = 'linear-gradient(90deg, #2c3e50 0%, #4ca1af 100%)';
+        btn.onclick = function () {
+            ipcRenderer.send('launch-installer', archivePath);
         };
     }
 });
 
 ipcRenderer.on('extract-done', (event, res) => {
     const btn = document.getElementById('sv-float-dl-btn');
-    if(!btn) return;
-    if(res.success) {
-        if(res.setup) {
+    if (!btn) return;
+    if (res.success) {
+        if (res.setup) {
             btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8,5.14V19.14L19,12.14L8,5.14Z" /></svg> INSTALAR AGORA';
             btn.style.background = 'linear-gradient(90deg, #6a11cb 0%, #2575fc 100%)';
             btn.style.pointerEvents = 'auto';
-            btn.onclick = function() {
+            btn.onclick = function () {
                 ipcRenderer.send('launch-installer', res.setup);
             };
         } else {
@@ -202,15 +247,15 @@ ipcRenderer.on('extract-done', (event, res) => {
 
 ipcRenderer.on('my-games-list', (event, games) => {
     const list = document.getElementById('sv-mygames-list');
-    if(!list) return;
-    if(games.length === 0) {
+    if (!list) return;
+    if (games.length === 0) {
         list.innerHTML = '<div style="text-align:center; padding:40px; color:#8f98a0">Você ainda não baixou nenhum jogo via Launcher.</div>';
         return;
     }
     list.innerHTML = '';
     games.forEach(game => {
         const safeGamePath = game.path.replace(/\\/g, '/');
-        const safeName = game.name.replace(/'/g, "\\'"); 
+        const safeName = game.name.replace(/'/g, "\\'");
         let iconHtml = '';
         if (game.image && game.image.startsWith('http')) {
             iconHtml = `<img src="${game.image}" style="width:50px; height:70px; object-fit:cover; border-radius:4px; margin-right:15px; border:1px solid #333;">`;
@@ -220,17 +265,17 @@ ipcRenderer.on('my-games-list', (event, games) => {
         let hasSetup = false;
         let setupFile = '';
         try {
-            if(fs.existsSync(game.path)) {
-                if(fs.statSync(game.path).isDirectory()) {
+            if (fs.existsSync(game.path)) {
+                if (fs.statSync(game.path).isDirectory()) {
                     const files = fs.readdirSync(game.path);
                     const setup = files.find(f => f.toLowerCase().includes('setup.exe') || f.toLowerCase().includes('install.exe'));
-                    if(setup) { hasSetup = true; setupFile = setup; }
+                    if (setup) { hasSetup = true; setupFile = setup; }
                 }
             }
-        } catch(e) {}
-        
+        } catch (e) { }
+
         const setupPath = hasSetup ? path.join(game.path, setupFile).replace(/\\/g, '/') : '';
-        
+
         const item = document.createElement('div');
         item.className = 'sv-game-card';
         item.innerHTML = `
@@ -264,20 +309,20 @@ ipcRenderer.on('torrent-progress', (event, data) => {
         if (!isCollapsed && !bar.classList.contains('visible')) bar.classList.add('visible');
         if (isCollapsed && bar.classList.contains('visible')) bar.classList.remove('visible');
     }
-    if(doc.getElementById('sv-dl-name')) doc.getElementById('sv-dl-name').innerText = data.name;
-    if(doc.getElementById('sv-dl-bar')) doc.getElementById('sv-dl-bar').style.width = data.progress + '%';
-    if(doc.getElementById('sv-dl-peers')) doc.getElementById('sv-dl-peers').innerText = data.peers + (typeof data.peers === 'string' && data.peers.includes('RD') ? "" : " Peers");
-    if(doc.getElementById('sv-dl-eta')) doc.getElementById('sv-dl-eta').innerText = data.eta;
-    if(doc.getElementById('sv-dl-perc')) doc.getElementById('sv-dl-perc').innerText = data.progress + '%';
+    if (doc.getElementById('sv-dl-name')) doc.getElementById('sv-dl-name').innerText = data.name;
+    if (doc.getElementById('sv-dl-bar')) doc.getElementById('sv-dl-bar').style.width = data.progress + '%';
+    if (doc.getElementById('sv-dl-peers')) doc.getElementById('sv-dl-peers').innerText = data.peers + (typeof data.peers === 'string' && data.peers.includes('RD') ? "" : " Peers");
+    if (doc.getElementById('sv-dl-eta')) doc.getElementById('sv-dl-eta').innerText = data.eta;
+    if (doc.getElementById('sv-dl-perc')) doc.getElementById('sv-dl-perc').innerText = data.progress + '%';
     const speedEl = doc.getElementById('sv-dl-speed');
-    if(speedEl) {
-        if(data.paused) speedEl.innerText = "PAUSADO"; 
+    if (speedEl) {
+        if (data.paused) speedEl.innerText = "PAUSADO";
         else speedEl.innerText = data.speed;
     }
     const iPause = doc.getElementById('icon-pause');
     const iPlay = doc.getElementById('icon-play');
-    if(iPause && iPlay) {
-        if(data.paused) { iPause.style.display = 'none'; iPlay.style.display = 'block'; } 
+    if (iPause && iPlay) {
+        if (data.paused) { iPause.style.display = 'none'; iPlay.style.display = 'block'; }
         else { iPause.style.display = 'block'; iPlay.style.display = 'none'; }
     }
     const canvas = doc.getElementById('sv-dl-canvas');
@@ -286,37 +331,37 @@ ipcRenderer.on('torrent-progress', (event, data) => {
         const rect = canvas.parentElement.getBoundingClientRect();
         canvas.width = rect.width; canvas.height = rect.height;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
+
         ctx.beginPath();
-        const maxVal = Math.max(...data.chart, 100000); 
+        const maxVal = Math.max(...data.chart, 100000);
         const step = canvas.width / (data.chart.length - 1);
         data.chart.forEach((val, index) => {
             const x = index * step;
-            const y = canvas.height - ((val / maxVal) * (canvas.height * 0.9)); 
-            if(index === 0) ctx.moveTo(x, y);
+            const y = canvas.height - ((val / maxVal) * (canvas.height * 0.9));
+            if (index === 0) ctx.moveTo(x, y);
             else {
                 const prevX = (index - 1) * step;
-                const prevY = canvas.height - ((data.chart[index-1] / maxVal) * (canvas.height * 0.9));
+                const prevY = canvas.height - ((data.chart[index - 1] / maxVal) * (canvas.height * 0.9));
                 const cx = (prevX + x) / 2;
                 ctx.quadraticCurveTo(cx, prevY, x, y);
             }
         });
         ctx.lineTo(canvas.width, canvas.height); ctx.lineTo(0, canvas.height); ctx.closePath();
         const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-        gradient.addColorStop(0, "rgba(164, 208, 7, 0.4)");    
-        gradient.addColorStop(1, "rgba(23, 26, 33, 0)");        
+        gradient.addColorStop(0, "rgba(164, 208, 7, 0.4)");
+        gradient.addColorStop(1, "rgba(23, 26, 33, 0)");
         ctx.fillStyle = gradient; ctx.fill();
         ctx.lineWidth = 2; ctx.strokeStyle = "rgba(164, 208, 7, 0.9)"; ctx.stroke();
-        
+
         ctx.beginPath();
-        const maxPeers = Math.max(...data.peersChart, 10); 
+        const maxPeers = Math.max(...data.peersChart, 10);
         data.peersChart.forEach((val, index) => {
             const x = index * step;
-            const y = canvas.height - ((val / maxPeers) * (canvas.height * 0.8)); 
-            if(index === 0) ctx.moveTo(x, y);
+            const y = canvas.height - ((val / maxPeers) * (canvas.height * 0.8));
+            if (index === 0) ctx.moveTo(x, y);
             else {
                 const prevX = (index - 1) * step;
-                const prevY = canvas.height - ((data.peersChart[index-1] / maxPeers) * (canvas.height * 0.8));
+                const prevY = canvas.height - ((data.peersChart[index - 1] / maxPeers) * (canvas.height * 0.8));
                 const cx = (prevX + x) / 2;
                 ctx.quadraticCurveTo(cx, prevY, x, y);
             }
@@ -327,8 +372,8 @@ ipcRenderer.on('torrent-progress', (event, data) => {
 
 ipcRenderer.on('torrent-files', (event, files) => {
     const list = document.getElementById('sv-files-list');
-    if(!list) return;
-    list.innerHTML = ''; 
+    if (!list) return;
+    list.innerHTML = '';
     files.forEach(file => {
         const item = document.createElement('div');
         item.className = 'sv-file-item';
@@ -342,5 +387,5 @@ ipcRenderer.on('torrent-files', (event, files) => {
 
 ipcRenderer.on('torrent-done', () => {
     const bar = document.getElementById('sv-dl-bar');
-    if(bar) bar.style.borderTop = '1px solid #43b581';
+    if (bar) bar.style.borderTop = '1px solid #43b581';
 });
